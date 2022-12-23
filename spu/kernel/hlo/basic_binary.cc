@@ -47,35 +47,26 @@ SIMPLE_BINARY_KERNEL_DEFN(GreaterEqual, hal::greater_equal)
 
 spu::Value Remainder(HalContext *ctx, const spu::Value &lhs,
                      const spu::Value &rhs) {
-  YASL_ENFORCE(lhs.dtype() == rhs.dtype(), "dtype mismatch {} != {}",
+  YACL_ENFORCE(lhs.dtype() == rhs.dtype(), "dtype mismatch {} != {}",
                lhs.dtype(), rhs.dtype());
 
-  auto lhs_f = lhs;
-  auto rhs_f = rhs;
-
   // 1st: find quotient by x/y
-  if (lhs_f.isInt()) {
-    lhs_f = hal::dtype_cast(ctx, lhs_f, DT_FXP);
-    rhs_f = hal::dtype_cast(ctx, rhs_f, DT_FXP);
-  }
+  auto quotient = hal::div(ctx, lhs, rhs);
 
-  auto quotient = hal::div(ctx, lhs_f, rhs_f);
-  // 2nd: round to nearst number through (x >= 0.0) ? floor(x) : ceil(x)...
-  auto zero = hal::constant(ctx, 0.0F, quotient.shape());
-  auto rquot = hal::select(ctx, hal::greater_equal(ctx, quotient, zero),
+  if (lhs.isFxp() || rhs.isFxp()) {
+    // 2nd: round to nearst number through (x >= 0.0) ? floor(x) : ceil(x)...
+    auto zero = hal::constant(ctx, 0, quotient.shape());
+    quotient = hal::select(ctx, hal::greater_equal(ctx, quotient, zero),
                            hal::floor(ctx, quotient), hal::ceil(ctx, quotient));
-  // 3rd: rem = numer - rquot * denom
-  auto ret = hal::sub(ctx, lhs_f, hal::mul(ctx, rquot, rhs_f));
-
-  if (lhs.isInt()) {
-    ret = hal::dtype_cast(ctx, ret, lhs.dtype());
   }
-  return ret;
+
+  // 3rd: rem = numer - rquot * denom
+  return hal::sub(ctx, lhs, hal::mul(ctx, quotient, rhs));
 }
 
 spu::Value Dot(HalContext *ctx, const spu::Value &lhs, const spu::Value &rhs) {
-  YASL_ENFORCE(!lhs.shape().empty() && lhs.shape().size() <= 2);
-  YASL_ENFORCE(!rhs.shape().empty() && rhs.shape().size() <= 2);
+  YACL_ENFORCE(!lhs.shape().empty() && lhs.shape().size() <= 2);
+  YACL_ENFORCE(!rhs.shape().empty() && rhs.shape().size() <= 2);
 
   return hal::matmul(ctx, lhs, rhs);
 }

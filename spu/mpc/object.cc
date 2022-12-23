@@ -16,15 +16,37 @@
 
 namespace spu::mpc {
 
+std::unique_ptr<State> State::fork() {
+  YACL_THROW("Not implemented, the sub class should override this");
+}
+
+std::unique_ptr<Object> Object::fork() {
+  auto new_obj = std::make_unique<Object>(name_);
+  new_obj->kernels_ = kernels_;
+  for (const auto& [key, val] : states_) {
+    new_obj->addState(key, val->fork());
+  }
+  return new_obj;
+}
+
+bool Object::hasLowCostFork() const {
+  for (const auto& [key, val] : states_) {
+    if (!val->hasLowCostFork()) {
+      return false;
+    }
+  }
+  return true;
+}
+
 void Object::regKernel(std::string_view name, std::unique_ptr<Kernel> kernel) {
   const auto itr = kernels_.find(name);
-  YASL_ENFORCE(itr == kernels_.end(), "kernel={} already exist", name);
+  YACL_ENFORCE(itr == kernels_.end(), "kernel={} already exist", name);
   kernels_.insert({name, std::move(kernel)});
 }
 
 Kernel* Object::getKernel(std::string_view name) {
   const auto itr = kernels_.find(name);
-  YASL_ENFORCE(itr != kernels_.end(), "kernel={} not found", name);
+  YACL_ENFORCE(itr != kernels_.end(), "kernel={} not found", name);
   return itr->second.get();
 }
 

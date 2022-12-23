@@ -23,8 +23,8 @@ namespace spu::kernel::hal {
 namespace {
 
 Value int2fxp(HalContext* ctx, const Value& x) {
-  SPU_TRACE_HAL(ctx, x);
-  YASL_ENFORCE(x.isInt(), "expect integer, got {}", x.dtype());
+  SPU_TRACE_HAL_LEAF(ctx, x);
+  YACL_ENFORCE(x.isInt(), "expect integer, got {}", x.dtype());
 
   return _lshift(ctx, x, ctx->getFxpBits()).asFxp();
 }
@@ -45,8 +45,8 @@ Value int2fxp(HalContext* ctx, const Value& x) {
 //   fxp2int(-1.2) = floor(-1.2+0.9999999) = -1
 //
 Value fxp2int(HalContext* ctx, const Value& x, DataType to_type) {
-  SPU_TRACE_HAL(ctx, x);
-  YASL_ENFORCE(x.dtype() == DataType::DT_FXP);
+  SPU_TRACE_HAL_LEAF(ctx, x);
+  YACL_ENFORCE(x.dtype() == DataType::DT_FXP);
 
   const size_t fxp_bits = ctx->getFxpBits();
   const Value kOneMinusEps = constant(ctx, (1 << fxp_bits) - 1, x.shape());
@@ -61,17 +61,17 @@ Value fxp2int(HalContext* ctx, const Value& x, DataType to_type) {
 
 // TODO: move p2s/reveal into a new header file.
 Value p2s(HalContext* ctx, const Value& x) {
-  SPU_TRACE_HAL(ctx, x);
+  SPU_TRACE_HAL_LEAF(ctx, x);
   return _p2s(ctx, x).setDtype(x.dtype());
 }
 
 Value reveal(HalContext* ctx, const Value& x) {
-  SPU_TRACE_HAL(ctx, x);
+  SPU_TRACE_HAL_LEAF(ctx, x);
   return _s2p(ctx, x).setDtype(x.dtype());
 }
 
 Value dtype_cast(HalContext* ctx, const Value& in, DataType to_type) {
-  SPU_TRACE_HAL(ctx, in, to_type);
+  SPU_TRACE_HAL_DISP(ctx, in, to_type);
 
   if (to_type == in.dtype()) {
     return in;
@@ -85,21 +85,21 @@ Value dtype_cast(HalContext* ctx, const Value& in, DataType to_type) {
       // carry-out calculation here.
       return Value(in.data(), to_type);
     } else {
-      YASL_ENFORCE(isFixedPoint(to_type));
+      YACL_ENFORCE(isFixedPoint(to_type));
       return int2fxp(ctx, in);
     }
   } else {
     if (isInteger(to_type)) {
       return fxp2int(ctx, in, to_type);
     } else {
-      YASL_ENFORCE(to_type == DT_FXP, "expect to_type FXP, got {}", to_type);
-      YASL_ENFORCE(in.dtype() == DT_FXP, "expect in type FXP, got {}", to_type);
+      YACL_ENFORCE(to_type == DT_FXP, "expect to_type FXP, got {}", to_type);
+      YACL_ENFORCE(in.dtype() == DT_FXP, "expect in type FXP, got {}", to_type);
       // we only support one FXP type, do nothing.
       return in;
     }
   }
 
-  YASL_THROW("should not be here");
+  YACL_THROW("should not be here");
 }
 
 }  // namespace spu::kernel::hal

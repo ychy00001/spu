@@ -17,7 +17,7 @@
 #include <functional>
 
 #include "benchmark/benchmark.h"
-#include "yasl/link/link.h"
+#include "yacl/link/link.h"
 
 #include "spu/core/shape_util.h"  // calcNumel
 #include "spu/mpc/api.h"
@@ -32,17 +32,17 @@ void BenchmarkPrint(uint32_t rank, std::vector<std::string>& parties,
 
 using CreateComputeFn = std::function<std::unique_ptr<Object>(
     const RuntimeConfig& conf,
-    const std::shared_ptr<yasl::link::Context>& lctx)>;
+    const std::shared_ptr<yacl::link::Context>& lctx)>;
 
 class ComputeBench : public benchmark::Fixture {
  public:
-  static std::shared_ptr<yasl::link::Context> bench_lctx;
+  static std::shared_ptr<yacl::link::Context> bench_lctx;
   static uint32_t bench_numel;
   static uint32_t bench_shiftbit;
   static CreateComputeFn bench_factory;
 };
 
-std::shared_ptr<yasl::link::Context> ComputeBench::bench_lctx = nullptr;
+std::shared_ptr<yacl::link::Context> ComputeBench::bench_lctx = nullptr;
 uint32_t ComputeBench::bench_numel = 7;
 uint32_t ComputeBench::bench_shiftbit = 2;
 CreateComputeFn ComputeBench::bench_factory = {};
@@ -81,8 +81,8 @@ CreateComputeFn ComputeBench::bench_factory = {};
       auto comm = obj->getState<Communicator>();                      \
       {                                                               \
         /* GIVEN */                                                   \
-        auto p0 = rand_p(obj.get(), field, bench_numel);              \
-        auto p1 = rand_p(obj.get(), field, bench_numel);              \
+        auto p0 = rand_p(obj.get(), bench_numel);                     \
+        auto p1 = rand_p(obj.get(), bench_numel);                     \
         auto s0 = p2s(obj.get(), p0);                                 \
         auto s1 = p2s(obj.get(), p1);                                 \
                                                                       \
@@ -105,8 +105,8 @@ CreateComputeFn ComputeBench::bench_factory = {};
         auto comm = obj->getState<Communicator>();                    \
                                                                       \
         /* GIVEN */                                                   \
-        auto p0 = rand_p(obj.get(), field, bench_numel);              \
-        auto p1 = rand_p(obj.get(), field, bench_numel);              \
+        auto p0 = rand_p(obj.get(), bench_numel);                     \
+        auto p1 = rand_p(obj.get(), bench_numel);                     \
         auto s0 = p2s(obj.get(), p0);                                 \
                                                                       \
         /* WHEN */                                                    \
@@ -137,7 +137,7 @@ SPU_BM_DEFINE_BINARY_OP(xor)
         auto comm = obj->getState<Communicator>();                    \
                                                                       \
         /* GIVEN */                                                   \
-        auto p0 = rand_p(obj.get(), field, bench_numel);              \
+        auto p0 = rand_p(obj.get(), bench_numel);                     \
         auto s0 = p2s(obj.get(), p0);                                 \
                                                                       \
         /* WHEN */                                                    \
@@ -159,7 +159,7 @@ SPU_BM_DEFINE_BINARY_OP(xor)
         auto comm = obj->getState<Communicator>();                    \
                                                                       \
         /* GIVEN */                                                   \
-        auto p0 = rand_p(obj.get(), field, bench_numel);              \
+        auto p0 = rand_p(obj.get(), bench_numel);                     \
                                                                       \
         /* WHEN */                                                    \
         SPU_BM_SECTION(comm, OP##_p(obj.get(), p0);)                  \
@@ -186,7 +186,7 @@ SPU_BM_DEFINE_UNARY_OP(not )
         auto comm = obj->getState<Communicator>();                    \
                                                                       \
         /* GIVEN */                                                   \
-        auto p0 = rand_p(obj.get(), field, bench_numel);              \
+        auto p0 = rand_p(obj.get(), bench_numel);                     \
         auto s0 = p2s(obj.get(), p0);                                 \
                                                                       \
         /* WHEN */                                                    \
@@ -208,7 +208,7 @@ SPU_BM_DEFINE_UNARY_OP(not )
         auto comm = obj->getState<Communicator>();                    \
                                                                       \
         /* GIVEN */                                                   \
-        auto p0 = rand_p(obj.get(), field, bench_numel);              \
+        auto p0 = rand_p(obj.get(), bench_numel);                     \
                                                                       \
         /* WHEN */                                                    \
         SPU_BM_SECTION(comm, OP##_p(obj.get(), p0, BIT));             \
@@ -265,8 +265,8 @@ SPU_BM_DEFINE_F(ComputeBench, mmul_ss)
       auto* comm = obj->getState<Communicator>();
 
       /* GIVEN */
-      auto p0 = rand_p(obj.get(), field, calcNumel(shape_A));
-      auto p1 = rand_p(obj.get(), field, calcNumel(shape_B));
+      auto p0 = rand_p(obj.get(), calcNumel(shape_A));
+      auto p1 = rand_p(obj.get(), calcNumel(shape_B));
       auto s0 = p2s(obj.get(), p0);
       auto s1 = p2s(obj.get(), p1);
 
@@ -295,8 +295,8 @@ SPU_BM_DEFINE_F(ComputeBench, mmul_sp)
       auto* comm = obj->getState<Communicator>();
 
       /* GIVEN */
-      auto p0 = rand_p(obj.get(), field, calcNumel(shape_A));
-      auto p1 = rand_p(obj.get(), field, calcNumel(shape_B));
+      auto p0 = rand_p(obj.get(), calcNumel(shape_A));
+      auto p1 = rand_p(obj.get(), calcNumel(shape_B));
       auto s0 = p2s(obj.get(), p0);
 
       /* WHEN */
@@ -318,7 +318,7 @@ SPU_BM_DEFINE_F(ComputeBench, p2s)
       auto* comm = obj->getState<Communicator>();
 
       /* GIVEN */
-      auto p0 = rand_p(obj.get(), field, bench_numel);
+      auto p0 = rand_p(obj.get(), bench_numel);
 
       /* WHEN */
       SPU_BM_SECTION(comm, p2s(obj.get(), p0));
@@ -339,7 +339,7 @@ SPU_BM_DEFINE_F(ComputeBench, s2p)
       auto* comm = obj->getState<Communicator>();
 
       /* GIVEN */
-      auto p0 = rand_p(obj.get(), field, bench_numel);
+      auto p0 = rand_p(obj.get(), bench_numel);
       auto s0 = p2s(obj.get(), p0);
 
       /* WHEN */

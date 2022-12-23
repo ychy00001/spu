@@ -14,15 +14,20 @@
 
 #include "spu/kernel/hlo/reduce.h"
 
+#include <algorithm>
 #include <cstdint>
+#include <future>
 #include <iostream>
 #include <stack>
 #include <vector>
 
 #include "spu/core/parallel_utils.h"
 #include "spu/core/shape_util.h"
+#include "spu/kernel/hal/concat.h"
 #include "spu/kernel/hal/constants.h"
+#include "spu/kernel/hal/polymorphic.h"
 #include "spu/kernel/hal/shape_ops.h"
+#include "spu/kernel/hal/type_cast.h"
 #include "spu/kernel/hlo/geometrical.h"
 #include "spu/kernel/hlo/utils.h"
 
@@ -85,7 +90,7 @@ std::vector<spu::Value> TreeReduce(HalContext *ctx,
     outputs = reducer(lhs, rhs);
     len /= 2;
 
-    YASL_ENFORCE(outputs[0].shape()[axis] == len);
+    YACL_ENFORCE(outputs[0].shape()[axis] == len);
   }
 
   // TODO: this may cause at worst 2*lg(n) time of reducer call, compare the
@@ -111,7 +116,7 @@ spu::Value ExpandStridedWindow(
   const auto &base_shape = base.shape();
   const size_t ndim = base_shape.size();
 
-  YASL_ENFORCE(ndim == window_shape.size() &&    //
+  YACL_ENFORCE(ndim == window_shape.size() &&    //
                ndim == window_strides.size() &&  //
                ndim == padding.size());
 
@@ -120,7 +125,7 @@ spu::Value ExpandStridedWindow(
   for (size_t dim = 0; dim < ndim; dim++) {
     int64_t padded_size =
         padding[dim].first + padding[dim].second + base_shape[dim];
-    YASL_ENFORCE((padded_size - window_shape[dim]) % window_strides[dim] == 0);
+    YACL_ENFORCE((padded_size - window_shape[dim]) % window_strides[dim] == 0);
     expanded_shape[dim] =
         ((padded_size - window_shape[dim]) / window_strides[dim] + 1) *
         window_shape[dim];
@@ -134,15 +139,15 @@ spu::Value ExpandStridedWindow(
 
   auto numel = calcNumel(expanded_shape);
 
-  yasl::parallel_for(
+  yacl::parallel_for(
       0, numel, computeTaskSize(numel), [&](int64_t begin, int64_t end) {
         std::vector<int64_t> expanded_index =
             unflattenIndex(begin, expanded_shape);
 
-        for (int64_t idx = begin; idx < end; ++idx) {
-          std::vector<int64_t> window_count_index(ndim, 0);
-          std::vector<int64_t> window_index(ndim, 0);
+        std::vector<int64_t> window_count_index(ndim, 0);
+        std::vector<int64_t> window_index(ndim, 0);
 
+        for (int64_t idx = begin; idx < end; ++idx) {
           for (size_t dim = 0; dim < ndim; dim++) {
             window_index[dim] = expanded_index[dim] % window_shape[dim];
             window_count_index[dim] = expanded_index[dim] / window_shape[dim];
@@ -173,10 +178,10 @@ spu::Value ConvertToTiledLayout(HalContext *ctx, const spu::Value &in,
   //
   // For example, in shape = [6, 12], window = [2, 3]
   // The result is [3, 4, 2, 3]
-  YASL_ENFORCE(in.shape().size() == block_shape.size());
+  YACL_ENFORCE(in.shape().size() == block_shape.size());
   std::vector<int64_t> tiled_shape;
   for (size_t dim = 0; dim < in.shape().size(); dim++) {
-    YASL_ENFORCE(in.shape()[dim] % block_shape[dim] == 0);
+    YACL_ENFORCE(in.shape()[dim] % block_shape[dim] == 0);
     tiled_shape.push_back(in.shape()[dim] / block_shape[dim]);
     tiled_shape.push_back(block_shape[dim]);
   }
@@ -272,12 +277,12 @@ std::vector<spu::Value> ReduceWindowWithoutDilation(
   return outputs;
 }
 
-std::vector<spu::Value> ReduceWindow(HalContext *ctx,
-                                     absl::Span<const spu::Value> inputs,
-                                     absl::Span<const spu::Value> init_values,
-                                     absl::Span<const int64_t> ret_shape,
-                                     const ReduceWindowConfig &config,
-                                     const BatchedValueBinaryFn &reducer) {
+std::vector<spu::Value> ReduceWindowImpl(
+    HalContext *ctx, absl::Span<const spu::Value> inputs,
+    absl::Span<const spu::Value> init_values,
+    absl::Span<const int64_t> ret_shape, const ReduceWindowConfig &config,
+    bool last_operand_is_window_mask, bool ignore_init_value,
+    const BatchedValueBinaryFn &reducer) {
   if (std::all_of(config.window_dilations.begin(),
                   config.window_dilations.end(),
                   [](const int64_t x) { return x == 1; }) &&
@@ -285,11 +290,11 @@ std::vector<spu::Value> ReduceWindow(HalContext *ctx,
                   [](const int64_t x) { return x == 1; })) {
     return ReduceWindowWithoutDilation(
         ctx, inputs, init_values, config.window_shape, config.window_strides,
-        config.window_padding, config.last_operand_is_window_mask,
-        config.ignore_init_value, ret_shape, reducer);
+        config.window_padding, last_operand_is_window_mask, ignore_init_value,
+        ret_shape, reducer);
   }
 
-  YASL_ENFORCE(config.last_operand_is_window_mask == false);
+  YACL_ENFORCE(!last_operand_is_window_mask);
 
   const int64_t ndims = inputs[0].shape().size();
   std::vector<int64_t> window_index(ndims, 0);
@@ -343,6 +348,16 @@ std::vector<spu::Value> ReduceWindow(HalContext *ctx,
       bumpIndices<int64_t>(config.window_shape, absl::MakeSpan(window_index)));
 
   return rets;
+}
+
+std::vector<spu::Value> ReduceWindow(HalContext *ctx,
+                                     absl::Span<const spu::Value> inputs,
+                                     absl::Span<const spu::Value> init_values,
+                                     absl::Span<const int64_t> ret_shape,
+                                     const ReduceWindowConfig &config,
+                                     const BatchedValueBinaryFn &reducer) {
+  return ReduceWindowImpl(ctx, inputs, init_values, ret_shape, config, false,
+                          false, reducer);
 }
 
 std::vector<spu::Value> Reduce(HalContext *ctx,
@@ -428,6 +443,158 @@ std::vector<spu::Value> Reduce(HalContext *ctx,
   }
 
   return reducer(results, broadcasted_init_values);
+}
+
+// So idea here..
+// When windows size is 2x2, tile and run parallel on window element level has
+// way to much overhead (both memory and computation).
+// Just do a window level parallel is good enough
+// And without dilation and padding, this can be achieved through just slicing
+// FIXME: This is a super special case...consider generalize it a little bit
+std::pair<spu::Value, spu::Value>
+ArgMax1x2x2x1NoPaddingOneStrideWithoutDilation(HalContext *ctx,
+                                               const spu::Value &input) {
+  auto input_shape = input.shape();
+
+  spu::Value h_max;
+  spu::Value h_idx_max;
+  {
+    // Get to horizontal slices
+    auto lhs = hal::slice(
+        ctx, input, {0, 0, 0, 0},
+        {input_shape[0], input_shape[1], input_shape[2] - 1, input_shape[3]},
+        {1, 1, 1, 1});
+    auto rhs = hal::slice(
+        ctx, input, {0, 0, 1, 0},
+        {input_shape[0], input_shape[1], input_shape[2], input_shape[3]},
+        {1, 1, 1, 1});
+    // Do a less comp
+    auto h_comp = hal::less(ctx, rhs, lhs);
+    // make comp an ashare
+    h_comp =
+        hal::add(ctx, h_comp,
+                 hal::zeros(ctx, VIS_PUBLIC, h_comp.dtype(), h_comp.shape()));
+
+    auto h_i_comp = hal::reshape(ctx, h_comp,
+                                 {h_comp.shape()[0], h_comp.shape()[1],
+                                  h_comp.shape()[2], h_comp.shape()[3], 1});
+
+    // Now do two selections
+    auto mask_shape = h_comp.shape();
+    mask_shape.emplace_back(2);
+
+    // Now compute horizontal max...
+    h_max = hal::select(ctx, h_comp, lhs, rhs);
+
+    // Mask index
+    h_idx_max =
+        hal::concatenate(ctx, {h_i_comp, hal::logical_not(ctx, h_i_comp)}, 4);
+  }
+
+  // Now do vertical compare...
+  auto upper_value = hal::slice(ctx, h_max, {0, 0, 0, 0},
+                                {h_max.shape()[0], h_max.shape()[1] - 1,
+                                 h_max.shape()[2], h_max.shape()[3]},
+                                {1, 1, 1, 1});
+  auto bottom_value = hal::slice(
+      ctx, h_max, {0, 1, 0, 0},
+      {h_max.shape()[0], h_max.shape()[1], h_max.shape()[2], h_max.shape()[3]},
+      {1, 1, 1, 1});
+
+  auto v_comp = hal::less(ctx, bottom_value, upper_value);
+  // make comp an ashare
+  v_comp = hal::add(
+      ctx, v_comp, hal::zeros(ctx, VIS_PUBLIC, v_comp.dtype(), v_comp.shape()));
+
+  // Compute max value
+  auto max_ret = hal::select(ctx, v_comp, upper_value, bottom_value);
+
+  // Compute max indicies
+  auto v_comp_not = hal::logical_not(ctx, v_comp);
+
+  auto v_i_comp = hal::reshape(ctx, v_comp,
+                               {v_comp.shape()[0], v_comp.shape()[1],
+                                v_comp.shape()[2], v_comp.shape()[3], 1});
+  v_i_comp = hal::broadcast_to(ctx, v_i_comp,
+                               {v_i_comp.shape()[0], v_i_comp.shape()[1],
+                                v_i_comp.shape()[2], v_i_comp.shape()[3], 2});
+
+  auto v_i_comp_not =
+      hal::reshape(ctx, v_comp_not,
+                   {v_comp_not.shape()[0], v_comp_not.shape()[1],
+                    v_comp_not.shape()[2], v_comp_not.shape()[3], 1});
+  v_i_comp_not =
+      hal::broadcast_to(ctx, v_i_comp_not,
+                        {v_i_comp_not.shape()[0], v_i_comp_not.shape()[1],
+                         v_i_comp_not.shape()[2], v_i_comp_not.shape()[3], 2});
+
+  auto upper_slice = hal::slice(
+      ctx, h_idx_max, {0, 0, 0, 0, 0},
+      {h_idx_max.shape()[0], h_idx_max.shape()[1] - 1, h_idx_max.shape()[2],
+       h_idx_max.shape()[3], h_idx_max.shape()[4]},
+      {1, 1, 1, 1, 1});
+
+  auto bottom_slice = hal::slice(
+      ctx, h_idx_max, {0, 1, 0, 0, 0},
+      {h_idx_max.shape()[0], h_idx_max.shape()[1], h_idx_max.shape()[2],
+       h_idx_max.shape()[3], h_idx_max.shape()[4]},
+      {1, 1, 1, 1, 1});
+
+  upper_slice = hal::mul(ctx, v_i_comp, upper_slice);
+  bottom_slice = hal::mul(ctx, v_i_comp_not, bottom_slice);
+
+  auto max_indicies = hal::concatenate(ctx, {upper_slice, bottom_slice}, 4);
+
+  return {max_ret, max_indicies};
+}
+
+std::pair<spu::Value, spu::Value> ArgMax(HalContext *ctx,
+                                         const spu::Value &input,
+                                         absl::Span<const int64_t> ret_shape,
+                                         const ReduceWindowConfig &config) {
+  // Add a fast 1x2x2x1, no padding fast reduce
+  auto no_padding =
+      std::all_of(config.window_padding.begin(), config.window_padding.end(),
+                  [](const std::pair<int64_t, int64_t> &p) {
+                    return p.first == 0 && p.second == 0;
+                  });
+  auto one_stride =
+      std::all_of(config.window_strides.begin(), config.window_strides.end(),
+                  [](auto v) { return v == 1; });
+  if (config.window_shape == absl::Span<const int64_t>{1, 2, 2, 1} &&
+      no_padding && one_stride) {
+    return ArgMax1x2x2x1NoPaddingOneStrideWithoutDilation(ctx, input);
+  }
+
+  // Create eye
+  size_t window_size =
+      std::accumulate(config.window_shape.begin(), config.window_shape.end(), 1,
+                      std::multiplies<size_t>());
+  xt::xarray<bool> e = xt::eye<bool>({window_size, window_size}, 0);
+
+  auto mask = hal::constant(ctx, e);
+
+  auto result = ReduceWindowImpl(
+      ctx, {input, mask}, {}, ret_shape, config, true, true,
+      [&](absl::Span<spu::Value const> lhs,
+          absl::Span<spu::Value const> rhs) -> std::vector<spu::Value> {
+        YACL_ENFORCE(lhs.size() == 2);
+        auto c = hal::less(ctx, rhs[0], lhs[0]);
+        // make a share
+        c = hal::add(ctx, c, hal::zeros(ctx, VIS_PUBLIC, c.dtype(), c.shape()));
+        // Select value
+        auto v = hal::select(ctx, c, lhs[0], rhs[0]);
+        // Select index
+        std::vector<int64_t> c_i_shape = c.shape();
+        c_i_shape.emplace_back(1);
+        auto c_i = hal::reshape(ctx, c, c_i_shape);
+        c_i_shape.back() = window_size;
+        c_i = hal::broadcast_to(ctx, c_i, c_i_shape);
+        auto i = hal::select(ctx, c_i, lhs[1], rhs[1]);
+
+        return {v, i};
+      });
+  return {result[0], result[1]};
 }
 
 }  // namespace spu::kernel::hlo

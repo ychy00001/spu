@@ -18,7 +18,7 @@
 #include <tuple>
 #include <vector>
 
-#include "yasl/base/exception.h"
+#include "yacl/base/exception.h"
 
 #include "spu/core/array_ref.h"
 #include "spu/core/ndarray_ref.h"
@@ -29,7 +29,7 @@
 namespace spu::kernel::hal {
 namespace {
 
-Value unflattenValue(const ArrayRef& arr, std::vector<int64_t> shape) {
+Value unflattenValue(const ArrayRef& arr, absl::Span<const int64_t> shape) {
   // The underline MPC engine does not take care of dtype information, so we
   // should set it as INVALID and let the upper layer to handle it.
   return Value(unflatten(arr, shape), DT_INVALID);
@@ -44,65 +44,60 @@ ArrayRef flattenValue(const Value& v) {
 
 std::tuple<int64_t, int64_t, int64_t> deduceMmulArgs(
     const std::vector<int64_t>& lhs, const std::vector<int64_t>& rhs) {
-  YASL_ENFORCE(!lhs.empty() && lhs.size() <= 2);
-  YASL_ENFORCE(!rhs.empty() && rhs.size() <= 2);
+  YACL_ENFORCE(!lhs.empty() && lhs.size() <= 2);
+  YACL_ENFORCE(!rhs.empty() && rhs.size() <= 2);
 
   if (lhs.size() == 1 && rhs.size() == 1) {
-    YASL_ENFORCE(lhs[0] == rhs[0]);
+    YACL_ENFORCE(lhs[0] == rhs[0]);
     return std::make_tuple(1, 1, rhs[0]);
   }
   if (lhs.size() == 1 && rhs.size() == 2) {
-    YASL_ENFORCE(lhs[0] == rhs[0]);
+    YACL_ENFORCE(lhs[0] == rhs[0]);
     return std::make_tuple(1, rhs[1], rhs[0]);
   }
   if (lhs.size() == 2 && rhs.size() == 1) {
-    YASL_ENFORCE(lhs[1] == rhs[0]);
+    YACL_ENFORCE(lhs[1] == rhs[0]);
     return std::make_tuple(lhs[0], 1, rhs[0]);
   }
-  YASL_ENFORCE(lhs[1] == rhs[0]);
+  YACL_ENFORCE(lhs[1] == rhs[0]);
   return std::make_tuple(lhs[0], rhs[1], rhs[0]);
 }
 
 }  // namespace
 
-#define MAP_UNARY_OP(NAME)                                \
-  Value _##NAME(HalContext* ctx, const Value& in) {       \
-    SPU_TRACE_HAL(ctx, in);                               \
-    ctx->prot()->setTracingDepth(ctx->getTracingDepth()); \
-    auto ret = mpc::NAME(ctx->prot(), flattenValue(in));  \
-    return unflattenValue(ret, in.shape());               \
+#define MAP_UNARY_OP(NAME)                               \
+  Value _##NAME(HalContext* ctx, const Value& in) {      \
+    SPU_TRACE_HAL_DISP(ctx, in);                         \
+    auto ret = mpc::NAME(ctx->prot(), flattenValue(in)); \
+    return unflattenValue(ret, in.shape());              \
   }
 
 #define MAP_SHIFT_OP(NAME)                                       \
   Value _##NAME(HalContext* ctx, const Value& in, size_t bits) { \
-    SPU_TRACE_HAL(ctx, in, bits);                                \
-    ctx->prot()->setTracingDepth(ctx->getTracingDepth());        \
+    SPU_TRACE_HAL_DISP(ctx, in, bits);                           \
     auto ret = mpc::NAME(ctx->prot(), flattenValue(in), bits);   \
     return unflattenValue(ret, in.shape());                      \
   }
 
 #define MAP_BITREV_OP(NAME)                                                   \
   Value _##NAME(HalContext* ctx, const Value& in, size_t start, size_t end) { \
-    SPU_TRACE_HAL(ctx, in, start, end);                                       \
-    ctx->prot()->setTracingDepth(ctx->getTracingDepth());                     \
+    SPU_TRACE_HAL_DISP(ctx, in, start, end);                                  \
     auto ret = mpc::NAME(ctx->prot(), flattenValue(in), start, end);          \
     return unflattenValue(ret, in.shape());                                   \
   }
 
 #define MAP_BINARY_OP(NAME)                                              \
   Value _##NAME(HalContext* ctx, const Value& x, const Value& y) {       \
-    SPU_TRACE_HAL(ctx, x, y);                                            \
-    YASL_ENFORCE(x.shape() == y.shape(), "shape mismatch: x={}, y={}",   \
+    SPU_TRACE_HAL_DISP(ctx, x, y);                                       \
+    YACL_ENFORCE(x.shape() == y.shape(), "shape mismatch: x={}, y={}",   \
                  x.shape(), y.shape());                                  \
-    ctx->prot()->setTracingDepth(ctx->getTracingDepth());                \
     auto ret = mpc::NAME(ctx->prot(), flattenValue(x), flattenValue(y)); \
     return unflattenValue(ret, x.shape());                               \
   }
 
 #define MAP_MMUL_OP(NAME)                                                  \
   Value _##NAME(HalContext* ctx, const Value& x, const Value& y) {         \
-    SPU_TRACE_HAL(ctx, x, y);                                              \
-    ctx->prot()->setTracingDepth(ctx->getTracingDepth());                  \
+    SPU_TRACE_HAL_DISP(ctx, x, y);                                         \
     auto [m, n, k] = deduceMmulArgs(x.shape(), y.shape());                 \
     auto ret =                                                             \
         mpc::NAME(ctx->prot(), flattenValue(x), flattenValue(y), m, n, k); \
@@ -110,16 +105,26 @@ std::tuple<int64_t, int64_t, int64_t> deduceMmulArgs(
   }
 
 Type _common_type_s(HalContext* ctx, const Type& a, const Type& b) {
-  SPU_TRACE_HAL(ctx, a, b);
-  ctx->prot()->setTracingDepth(ctx->getTracingDepth());
+  SPU_TRACE_HAL_DISP(ctx, a, b);
   return mpc::common_type_s(ctx->prot(), a, b);
 }
 
 Value _cast_type_s(HalContext* ctx, const Value& in, const Type& to) {
-  SPU_TRACE_HAL(ctx, in, to);
-  ctx->prot()->setTracingDepth(ctx->getTracingDepth());
+  SPU_TRACE_HAL_DISP(ctx, in, to);
   auto ret = mpc::cast_type_s(ctx->prot(), flattenValue(in), to);
   return unflattenValue(ret, in.shape());
+}
+
+Value _rand_p(HalContext* ctx, absl::Span<const int64_t> shape) {
+  SPU_TRACE_HAL_DISP(ctx, shape);
+  auto rnd = mpc::rand_p(ctx->prot(), calcNumel(shape));
+  return unflattenValue(rnd, shape);
+}
+
+Value _rand_s(HalContext* ctx, absl::Span<const int64_t> shape) {
+  SPU_TRACE_HAL_DISP(ctx, shape);
+  auto rnd = mpc::rand_s(ctx->prot(), calcNumel(shape));
+  return unflattenValue(rnd, shape);
 }
 
 MAP_UNARY_OP(p2s)

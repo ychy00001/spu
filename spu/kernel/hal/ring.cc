@@ -17,8 +17,9 @@
 #include <array>
 #include <cmath>
 
-#include "yasl/base/exception.h"
+#include "yacl/base/exception.h"
 
+#include "spu/core/shape_util.h"
 #include "spu/kernel/hal/constants.h"
 #include "spu/kernel/hal/prot_wrapper.h"
 #include "spu/kernel/hal/shape_ops.h"
@@ -29,22 +30,22 @@ namespace {
 
 std::tuple<int64_t, int64_t, int64_t> deduceMmulArgs(
     const std::vector<int64_t>& lhs, const std::vector<int64_t>& rhs) {
-  YASL_ENFORCE(!lhs.empty() && lhs.size() <= 2);
-  YASL_ENFORCE(!rhs.empty() && rhs.size() <= 2);
+  YACL_ENFORCE(!lhs.empty() && lhs.size() <= 2);
+  YACL_ENFORCE(!rhs.empty() && rhs.size() <= 2);
 
   if (lhs.size() == 1 && rhs.size() == 1) {
-    YASL_ENFORCE(lhs[0] == rhs[0]);
+    YACL_ENFORCE(lhs[0] == rhs[0]);
     return std::make_tuple(1, 1, rhs[0]);
   }
   if (lhs.size() == 1 && rhs.size() == 2) {
-    YASL_ENFORCE(lhs[0] == rhs[0]);
+    YACL_ENFORCE(lhs[0] == rhs[0]);
     return std::make_tuple(1, rhs[1], rhs[0]);
   }
   if (lhs.size() == 2 && rhs.size() == 1) {
-    YASL_ENFORCE(lhs[1] == rhs[0]);
+    YACL_ENFORCE(lhs[1] == rhs[0]);
     return std::make_tuple(lhs[0], 1, rhs[0]);
   }
-  YASL_ENFORCE(lhs[1] == rhs[0]);
+  YACL_ENFORCE(lhs[1] == rhs[0]);
   return std::make_tuple(lhs[0], rhs[1], rhs[0]);
 }
 
@@ -52,6 +53,9 @@ std::tuple<int64_t, int64_t, int64_t> calcMmulTilingSize(int64_t m, int64_t n,
                                                          int64_t k,
                                                          size_t elsize,
                                                          size_t mem_limit) {
+  if (m == 0 || n == 0 || k == 0) {
+    return {m, n, k};
+  }
   const auto elnum_limit = static_cast<int64_t>(mem_limit / elsize);
   const int64_t expected_step = std::ceil(std::sqrt(elnum_limit));
 
@@ -78,7 +82,7 @@ Type _common_type(HalContext* ctx, const Type& a, const Type& b) {
   } else if (b.isa<Secret>()) {
     return b;
   } else {
-    YASL_ENFORCE(a.isa<Public>() && b.isa<Public>());
+    YACL_ENFORCE(a.isa<Public>() && b.isa<Public>());
     return a;
   }
 }
@@ -92,37 +96,37 @@ Value _cast_type(HalContext* ctx, const Value& x, const Type& to) {
   } else if (x.isSecret() && to.isa<Secret>()) {
     return _cast_type_s(ctx, x, to);
   } else {
-    YASL_THROW("show not be here x={}, to={}", x, to);
+    YACL_THROW("show not be here x={}, to={}", x, to);
   }
 }
 
 #define IMPL_UNARY_OP(Name, FnP, FnS)                        \
   Value Name(HalContext* ctx, const Value& in) {             \
-    SPU_TRACE_HAL(ctx, in);                                  \
+    SPU_TRACE_HAL_LEAF(ctx, in);                             \
     if (in.isPublic()) {                                     \
       return FnP(ctx, in);                                   \
     } else if (in.isSecret()) {                              \
       return FnS(ctx, in);                                   \
     } else {                                                 \
-      YASL_THROW("unsupport unary op={} for {}", #Name, in); \
+      YACL_THROW("unsupport unary op={} for {}", #Name, in); \
     }                                                        \
   }
 
 #define IMPL_SHIFT_OP(Name, FnP, FnS)                         \
   Value Name(HalContext* ctx, const Value& in, size_t bits) { \
-    SPU_TRACE_HAL(ctx, in, bits);                             \
+    SPU_TRACE_HAL_LEAF(ctx, in, bits);                        \
     if (in.isPublic()) {                                      \
       return FnP(ctx, in, bits);                              \
     } else if (in.isSecret()) {                               \
       return FnS(ctx, in, bits);                              \
     } else {                                                  \
-      YASL_THROW("unsupport unary op={} for {}", #Name, in);  \
+      YACL_THROW("unsupport unary op={} for {}", #Name, in);  \
     }                                                         \
   }
 
 #define IMPL_COMMUTATIVE_BINARY_OP(Name, FnPP, FnSP, FnSS)         \
   Value Name(HalContext* ctx, const Value& x, const Value& y) {    \
-    SPU_TRACE_HAL(ctx, x, y);                                      \
+    SPU_TRACE_HAL_LEAF(ctx, x, y);                                 \
     if (x.isPublic() && y.isPublic()) {                            \
       return FnPP(ctx, x, y);                                      \
     } else if (x.isSecret() && y.isPublic()) {                     \
@@ -133,7 +137,7 @@ Value _cast_type(HalContext* ctx, const Value& x, const Type& to) {
     } else if (x.isSecret() && y.isSecret()) {                     \
       return FnSS(ctx, y, x);                                      \
     } else {                                                       \
-      YASL_THROW("unsupported op {} for x={}, y={}", #Name, x, y); \
+      YACL_THROW("unsupported op {} for x={}, y={}", #Name, x, y); \
     }                                                              \
   }
 
@@ -150,12 +154,12 @@ IMPL_COMMUTATIVE_BINARY_OP(_and, _and_pp, _and_sp, _and_ss)
 IMPL_COMMUTATIVE_BINARY_OP(_xor, _xor_pp, _xor_sp, _xor_ss)
 
 Value _sub(HalContext* ctx, const Value& x, const Value& y) {
-  SPU_TRACE_HAL(ctx, x, y);
+  SPU_TRACE_HAL_LEAF(ctx, x, y);
   return _add(ctx, x, _negate(ctx, y));
 }
 
 Value _eqz(HalContext* ctx, const Value& x) {
-  SPU_TRACE_HAL(ctx, x);
+  SPU_TRACE_HAL_LEAF(ctx, x);
 
   // eqz(x) = not(lsb(pre_or(x)))
   // all equal to zero means lsb equals to zero
@@ -186,11 +190,12 @@ Value _mmul(HalContext* ctx, const Value& x, const Value& y) {
     } else if (x.isSecret() && y.isSecret()) {
       return _mmul_ss(ctx, x, y);
     } else {
-      YASL_THROW("unsupported op {} for x={}, y={}", "_matmul", x, y);
+      YACL_THROW("unsupported op {} for x={}, y={}", "_matmul", x, y);
     }
   };
 
-  if (m_step == m && n_step == n && k_step == k) {
+  if (ctx->rt_config().experimental_disable_mmul_split() ||
+      (m_step == m && n_step == n && k_step == k)) {
     // no split
     return mmul_impl(x, y);
   }
@@ -214,7 +219,7 @@ Value _mmul(HalContext* ctx, const Value& x, const Value& y) {
 
         Value x_block;
         if (x.shape().size() == 1) {
-          YASL_ENFORCE(m_start == 0 && m_end == 1);
+          YACL_ENFORCE(m_start == 0 && m_end == 1);
           x_block = slice(ctx, x, {k_start}, {k_end}, {});
         } else {
           x_block = slice(ctx, x, {m_start, k_start}, {m_end, k_end}, {});
@@ -222,7 +227,7 @@ Value _mmul(HalContext* ctx, const Value& x, const Value& y) {
 
         Value y_block;
         if (y.shape().size() == 1) {
-          YASL_ENFORCE(n_start == 0 && n_end == 1);
+          YACL_ENFORCE(n_start == 0 && n_end == 1);
           y_block = slice(ctx, y, {k_start}, {k_end}, {});
         } else {
           y_block = slice(ctx, y, {k_start, n_start}, {k_end, n_end}, {});
@@ -247,12 +252,12 @@ Value _mmul(HalContext* ctx, const Value& x, const Value& y) {
     const auto& row_blocks = ret_blocks[r];
     for (int64_t c = 0; c < static_cast<int64_t>(row_blocks.size()); c++) {
       const auto& block = row_blocks[c];
-      YASL_ENFORCE(block.data().isCompact());
+      YACL_ENFORCE(block.data().isCompact());
       const int64_t block_rows = block.shape()[0];
       const int64_t block_cols = block.shape()[1];
       if (n_blocks == 1) {
-        YASL_ENFORCE(row_blocks.size() == 1);
-        YASL_ENFORCE(block_cols == n);
+        YACL_ENFORCE(row_blocks.size() == 1);
+        YACL_ENFORCE(block_cols == n);
         char* dst = &ret.data().at<char>({r * m_step, 0});
         const char* src = &block.data().at<char>({0, 0});
         size_t cp_len = block.elsize() * block.numel();
@@ -277,7 +282,7 @@ Value _or(HalContext* ctx, const Value& x, const Value& y) {
 }
 
 Value _trunc(HalContext* ctx, const Value& x, size_t bits) {
-  SPU_TRACE_HAL(ctx, x, bits);
+  SPU_TRACE_HAL_LEAF(ctx, x, bits);
   bits = (bits == 0) ? ctx->getFxpBits() : bits;
 
   if (x.isPublic()) {
@@ -285,19 +290,19 @@ Value _trunc(HalContext* ctx, const Value& x, size_t bits) {
   } else if (x.isSecret()) {
     return _truncpr_s(ctx, x, bits);
   } else {
-    YASL_THROW("unsupport unary op={} for {}", "_rshift", x);
+    YACL_THROW("unsupport unary op={} for {}", "_rshift", x);
   }
 }
 
 Value _negate(HalContext* ctx, const Value& x) {
-  SPU_TRACE_HAL(ctx, x);
+  SPU_TRACE_HAL_LEAF(ctx, x);
 
   // negate(x) = not(x) + 1
   return _add(ctx, _not(ctx, x), constant(ctx, 1, x.shape()));
 }
 
 Value _sign(HalContext* ctx, const Value& x) {
-  SPU_TRACE_HAL(ctx, x);
+  SPU_TRACE_HAL_LEAF(ctx, x);
 
   // is_negative = x < 0 ? 1 : 0;
   const Value is_negative = _msb(ctx, x);
@@ -313,7 +318,7 @@ Value _sign(HalContext* ctx, const Value& x) {
 }
 
 Value _less(HalContext* ctx, const Value& x, const Value& y) {
-  SPU_TRACE_HAL(ctx, x, y);
+  SPU_TRACE_HAL_LEAF(ctx, x, y);
 
   // test msb(x-y) == 1
   return _msb(ctx, _sub(ctx, x, y));
@@ -321,7 +326,7 @@ Value _less(HalContext* ctx, const Value& x, const Value& y) {
 
 // swap bits of [start, end)
 Value _bitrev(HalContext* ctx, const Value& x, size_t start, size_t end) {
-  SPU_TRACE_HAL(ctx, x, start, end);
+  SPU_TRACE_HAL_LEAF(ctx, x, start, end);
 
   if (x.isPublic()) {
     return _bitrev_p(ctx, x, start, end);
@@ -329,11 +334,11 @@ Value _bitrev(HalContext* ctx, const Value& x, size_t start, size_t end) {
     return _bitrev_s(ctx, x, start, end);
   }
 
-  YASL_THROW("unsupport op={} for {}", "_bitrev", x);
+  YACL_THROW("unsupport op={} for {}", "_bitrev", x);
 }
 
 Value _mux(HalContext* ctx, const Value& pred, const Value& a, const Value& b) {
-  SPU_TRACE_HLO(ctx, pred, a, b);
+  SPU_TRACE_HAL_LEAF(ctx, pred, a, b);
 
   // b + pred*(a-b)
   return _add(ctx, b, _mul(ctx, pred, _sub(ctx, a, b)));
@@ -342,7 +347,7 @@ Value _mux(HalContext* ctx, const Value& pred, const Value& a, const Value& b) {
 // TODO(junfeng): OPTIMIZE ME
 // TODO: test me.
 Value _popcount(HalContext* ctx, const Value& x) {
-  SPU_TRACE_HAL(ctx, x);
+  SPU_TRACE_HAL_LEAF(ctx, x);
 
   Value ret = constant(ctx, 0, x.shape());
   // TODO:

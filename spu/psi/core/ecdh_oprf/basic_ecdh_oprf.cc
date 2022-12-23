@@ -14,9 +14,12 @@
 
 #include "spu/psi/core/ecdh_oprf/basic_ecdh_oprf.h"
 
+#include <string>
+#include <vector>
+
 #include "absl/strings/escaping.h"
-#include "yasl/crypto/blake3_hash.h"
-#include "yasl/crypto/hash_util.h"
+#include "yacl/crypto/base/hash/blake3.h"
+#include "yacl/crypto/base/hash/hash_utils.h"
 
 #include "spu/psi/cryptor/ecc_utils.h"
 
@@ -32,14 +35,14 @@ namespace {
 constexpr size_t kEc256CompareLength = 12;
 
 std::string HashItem(absl::string_view item, absl::string_view masked_item,
-                     size_t hash_len, yasl::crypto::HashAlgorithm hash_type) {
-  std::unique_ptr<yasl::crypto::HashInterface> hash_algo;
+                     size_t hash_len, yacl::crypto::HashAlgorithm hash_type) {
+  std::unique_ptr<yacl::crypto::HashInterface> hash_algo;
   switch (hash_type) {
-    case yasl::crypto::HashAlgorithm::BLAKE3:
-      hash_algo = std::make_unique<yasl::crypto::Blake3Hash>();
+    case yacl::crypto::HashAlgorithm::BLAKE3:
+      hash_algo = std::make_unique<yacl::crypto::Blake3Hash>();
       break;
     default:
-      hash_algo = std::make_unique<yasl::crypto::SslHash>(hash_type);
+      hash_algo = std::make_unique<yacl::crypto::SslHash>(hash_type);
       break;
   }
 
@@ -47,7 +50,7 @@ std::string HashItem(absl::string_view item, absl::string_view masked_item,
   hash_algo->Update(masked_item);
   std::vector<uint8_t> hash = hash_algo->CumulativeHash();
 
-  YASL_ENFORCE(hash_len <= hash.size());
+  YACL_ENFORCE(hash_len <= hash.size());
 
   std::string hash_str(hash_len, '\0');
   std::memcpy(hash_str.data(), hash.data(), hash_len);
@@ -65,11 +68,11 @@ std::string HashItem(absl::string_view item, absl::string_view masked_item,
  */
 std::string EcPointMul(absl::string_view sk_bytes,
                        absl::string_view point_bytes, int ec_group_nid) {
-  BnCtxPtr bn_ctx(yasl::CheckNotNull(BN_CTX_new()));
+  BnCtxPtr bn_ctx(yacl::CheckNotNull(BN_CTX_new()));
   EcGroupSt ec_group(ec_group_nid);
   BigNumSt bn_sk;
 
-  YASL_ENFORCE(sk_bytes.size() == kEccKeySize);
+  YACL_ENFORCE(sk_bytes.size() == kEccKeySize);
   bn_sk.FromBytes(
       absl::string_view((const char *)sk_bytes.data(), sk_bytes.length()),
       ec_group.bn_n);
@@ -82,8 +85,9 @@ std::string EcPointMul(absl::string_view sk_bytes,
   EcPointSt ec_point2 = ec_point.PointMul(ec_group, bn_sk);
 
   std::string masked_point_bytes(kEcPointCompressLength, '\0');
-  ec_point2.ToBytes(absl::MakeSpan((uint8_t *)masked_point_bytes.data(),
-                                   masked_point_bytes.size()));
+  ec_point2.ToBytes(
+      absl::MakeSpan(reinterpret_cast<uint8_t *>(masked_point_bytes.data()),
+                     masked_point_bytes.size()));
 
   return masked_point_bytes;
 }
@@ -98,11 +102,11 @@ std::string EcPointMul(absl::string_view sk_bytes,
  */
 std::string ItemMul(absl::string_view sk_bytes, absl::string_view item_bytes,
                     int ec_group_nid) {
-  BnCtxPtr bn_ctx(yasl::CheckNotNull(BN_CTX_new()));
+  BnCtxPtr bn_ctx(yacl::CheckNotNull(BN_CTX_new()));
   EcGroupSt ec_group(ec_group_nid);
   BigNumSt bn_sk;
 
-  YASL_ENFORCE(sk_bytes.size() == kEccKeySize);
+  YACL_ENFORCE(sk_bytes.size() == kEccKeySize);
   bn_sk.FromBytes(
       absl::string_view((const char *)sk_bytes.data(), sk_bytes.length()),
       ec_group.bn_n);
@@ -112,8 +116,8 @@ std::string ItemMul(absl::string_view sk_bytes, absl::string_view item_bytes,
 
   EcPointSt ec_point2 = ec_point.PointMul(ec_group, bn_sk);
   std::string point_bytes(kEcPointCompressLength, '\0');
-  ec_point2.ToBytes(
-      absl::MakeSpan((uint8_t *)point_bytes.data(), point_bytes.size()));
+  ec_point2.ToBytes(absl::MakeSpan(
+      reinterpret_cast<uint8_t *>(point_bytes.data()), point_bytes.size()));
 
   return point_bytes;
 }
@@ -128,7 +132,7 @@ std::string BasicEcdhOprfServer::Evaluate(
 }
 
 std::string BasicEcdhOprfServer::FullEvaluate(
-    yasl::ByteContainerView input) const {
+    yacl::ByteContainerView input) const {
   absl::string_view input_sv =
       absl::string_view((const char *)input.data(), input.size());
   std::string point_bytes =
@@ -152,7 +156,7 @@ size_t BasicEcdhOprfServer::GetEcPointLength() const {
 
 BasicEcdhOprfClient::BasicEcdhOprfClient(CurveType type) : curve_type_(type) {
   ec_group_nid_ = Sm2Cryptor::GetEcGroupId(type);
-  BnCtxPtr bn_ctx(yasl::CheckNotNull(BN_CTX_new()));
+  BnCtxPtr bn_ctx(yacl::CheckNotNull(BN_CTX_new()));
   EcGroupSt ec_group(ec_group_nid_);
   BigNumSt bn_sk;
 
@@ -163,7 +167,7 @@ BasicEcdhOprfClient::BasicEcdhOprfClient(CurveType type) : curve_type_(type) {
   BigNumSt bn_sk_inv = bn_sk.Inverse(ec_group.bn_n);
 
   std::string sk_inv = bn_sk_inv.ToBytes();
-  YASL_ENFORCE(sk_inv_.size() == sk_inv.length());
+  YACL_ENFORCE(sk_inv_.size() == sk_inv.length());
 
   std::memcpy(sk_inv_.data(), sk_inv.data(), sk_inv.length());
   (void)curve_type_;
@@ -207,10 +211,10 @@ std::string FourQPointMul(absl::string_view sk_bytes, point_t point) {
   // whether cofactor clearing is required or not,
   //
   bool status = ecc_mul(point, (digit_t *)sk_bytes.data(), A, false);
-  YASL_ENFORCE(status, "fourq ecc_mul error, status = {}", status);
+  YACL_ENFORCE(status, "fourq ecc_mul error, status = {}", status);
 
   std::string masked_point_bytes(kEccKeySize, '\0');
-  encode(A, (uint8_t *)masked_point_bytes.data());
+  encode(A, reinterpret_cast<uint8_t *>(masked_point_bytes.data()));
 
   return masked_point_bytes;
 }
@@ -222,12 +226,12 @@ std::string FourQPointMul(absl::string_view sk_bytes,
 
   if ((point_bytes[15] & 0x80) != 0) {  // Is bit128(PublicKey) = 0?
     status = ECCRYPTO_ERROR_INVALID_PARAMETER;
-    YASL_THROW("fourq invalid point status = {}", static_cast<int>(status));
+    YACL_THROW("fourq invalid point status = {}", static_cast<int>(status));
   }
 
   // Also verifies that A is on the curve. If it is not, it fails
   status = decode(point_bytes.data(), A);
-  YASL_ENFORCE(status == ECCRYPTO_SUCCESS, "fourq decode error, status={}",
+  YACL_ENFORCE(status == ECCRYPTO_SUCCESS, "fourq decode error, status={}",
                static_cast<int>(status));
 
   return FourQPointMul(sk_bytes, A);
@@ -237,36 +241,38 @@ void FourQHashToCurvePoint(absl::string_view input, point_t pt) {
   f2elm_t r;
 
   // blake3 hash
-  std::vector<uint8_t> hash = yasl::crypto::Blake3(input);
+  auto hash = yacl::crypto::Blake3(input);
 
-  std::memcpy(r, hash.data(), hash.size());
+  std::memcpy(r, hash.data(), hash.size() * sizeof(decltype(hash)::value_type));
   // Reduce r; note that this does not produce a perfectly uniform distribution
   // modulo 2^127-1, but it is good enough.
   mod1271(r[0]);
   mod1271(r[1]);
 
   HashToCurve(r, pt);
-  return;
 }
 
 }  // namespace
 std::string FourQBasicEcdhOprfServer::Evaluate(
     absl::string_view blinded_element) const {
   return FourQPointMul(
-      absl::string_view((const char *)&private_key_[0], kEccKeySize),
-      absl::MakeSpan((const uint8_t *)blinded_element.data(),
+      absl::string_view(reinterpret_cast<const char *>(&private_key_[0]),
+                        kEccKeySize),
+      absl::MakeSpan(reinterpret_cast<const uint8_t *>(blinded_element.data()),
                      blinded_element.size()));
 }
 
 std::string FourQBasicEcdhOprfServer::FullEvaluate(
-    yasl::ByteContainerView input) const {
+    yacl::ByteContainerView input) const {
   point_t pt;
-  absl::string_view input_sv =
-      absl::string_view((const char *)input.data(), input.size());
+  absl::string_view input_sv = absl::string_view(
+      reinterpret_cast<const char *>(input.data()), input.size());
   FourQHashToCurvePoint(input_sv, pt);
 
   std::string pt_mul_bytes = FourQPointMul(
-      absl::string_view((const char *)&private_key_[0], kEccKeySize), pt);
+      absl::string_view(reinterpret_cast<const char *>(&private_key_[0]),
+                        kEccKeySize),
+      pt);
 
   return HashItem(input_sv, pt_mul_bytes, GetCompareLength(), hash_type_);
 }

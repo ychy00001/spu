@@ -18,7 +18,7 @@
 #include <memory>
 #include <string>
 
-#include "spu/core/profile.h"
+#include "spu/core/trace.h"
 #include "spu/mpc/kernel.h"
 
 namespace spu::mpc {
@@ -26,17 +26,28 @@ namespace spu::mpc {
 class State {
  public:
   virtual ~State() = default;
+
+  virtual bool hasLowCostFork() const { return false; }
+  virtual std::unique_ptr<State> fork();
 };
 
 // A (kernel) dynamic object dispatch a function to a kernel at runtime.
 //
 // Class that inherit from this class could do `dynamic binding`.
-class Object : public ProfilingContext {
-  std::map<std::string_view, std::unique_ptr<Kernel>> kernels_;
+class Object final {
+  std::map<std::string_view, std::shared_ptr<Kernel>> kernels_;
   std::map<std::string_view, std::unique_ptr<State>> states_;
 
+  std::string name_;
+
  public:
-  ~Object() override = default;
+  explicit Object(std::string name) : name_(std::move(name)) {}
+
+  const std::string& name() const { return name_; }
+
+  std::unique_ptr<Object> fork();
+
+  bool hasLowCostFork() const;
 
   void regKernel(std::string_view name, std::unique_ptr<Kernel> kernel);
 
@@ -55,7 +66,7 @@ class Object : public ProfilingContext {
 
   void addState(std::string_view name, std::unique_ptr<State> state) {
     const auto& itr = states_.find(name);
-    YASL_ENFORCE(itr == states_.end(), "state={} already exist", name);
+    YACL_ENFORCE(itr == states_.end(), "state={} already exist", name);
     states_.emplace(name, std::move(state));
   }
 
@@ -68,7 +79,7 @@ class Object : public ProfilingContext {
   template <typename StateT>
   StateT* getState() {
     const auto& itr = states_.find(StateT::kBindName);
-    YASL_ENFORCE(itr != states_.end(), "state={} not found", StateT::kBindName);
+    YACL_ENFORCE(itr != states_.end(), "state={} not found", StateT::kBindName);
     return dynamic_cast<StateT*>(itr->second.get());
   }
 
@@ -105,14 +116,5 @@ class Object : public ProfilingContext {
     return callImpl<Ret>(kernel, &ctx, std::forward<Args>(args)...);
   }
 };
-
-#define SPU_TRACE_KERNEL(CTX, ...) \
-  __TRACE_OP("mpc", kBindName, CTX->caller(), __VA_ARGS__)
-
-#define SPU_PROFILE_TRACE_KERNEL(CTX, ...) \
-  __TRACE_AND_PROFILE_OP("mpc", kBindName, CTX->caller(), __VA_ARGS__)
-
-#define SPU_PROFILE_END_TRACE_KERNEL(CTX, ...) \
-  __TRACE_AND_PROFILE_END_OP("mpc", kBindName, CTX->caller(), __VA_ARGS__)
 
 }  // namespace spu::mpc

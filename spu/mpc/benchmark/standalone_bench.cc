@@ -17,7 +17,6 @@
 #include "absl/strings/str_split.h"
 #include "llvm/Support/CommandLine.h"
 #include "utils.h"
-#include "yasl/link/transport/channel_brpc.h"
 
 #include "spu/mpc/aby3/protocol.h"
 #include "spu/mpc/semi2k/protocol.h"
@@ -56,7 +55,7 @@ void PrepareBenchmark(uint32_t party_num, uint32_t numel, uint32_t shiftbit,
       party_num = 3;
     }
   } else {
-    YASL_THROW("unknown protocol: {}, supported = semi2k/aby", protocol);
+    YACL_THROW("unknown protocol: {}, supported = semi2k/aby", protocol);
   }
 
   BenchInteral::bench_npc = party_num;

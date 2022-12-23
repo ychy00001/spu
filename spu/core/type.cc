@@ -21,12 +21,15 @@
 
 namespace spu {
 
-Type::Type() : model_(std::make_unique<VoidTy>()) {}
+Type::Type()
+    : model_(std::make_unique<VoidTy>()), cached_model_size_(model_->size()) {}
 
-Type::Type(std::unique_ptr<TypeObject> model) : model_(std::move(model)) {}
+Type::Type(std::unique_ptr<TypeObject> model)
+    : model_(std::move(model)), cached_model_size_(model_->size()) {}
 
 Type& Type::operator=(const Type& other) {
-  model_ = std::unique_ptr<TypeObject>(other.model_->clone());
+  model_ = other.model_->clone();
+  cached_model_size_ = model_->size();
   return *this;
 }
 
@@ -87,9 +90,9 @@ Type Type::fromString(std::string_view repr) {
   auto keyword = repr.substr(0, less);
   auto details = repr.substr(less + 1);
 
-  YASL_ENFORCE(!keyword.empty());
-  YASL_ENFORCE(!details.empty());
-  YASL_ENFORCE(details.back() == '>');
+  YACL_ENFORCE(!keyword.empty());
+  YACL_ENFORCE(!details.empty());
+  YACL_ENFORCE(details.back() == '>');
 
   // Remove trailing >
   details = details.substr(0, details.length());

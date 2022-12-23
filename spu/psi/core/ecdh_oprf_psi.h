@@ -20,8 +20,8 @@
 #include <string>
 #include <vector>
 
-#include "yasl/base/byte_container_view.h"
-#include "yasl/link/link.h"
+#include "yacl/base/byte_container_view.h"
+#include "yacl/link/link.h"
 
 #include "spu/psi/core/ecdh_oprf/ecdh_oprf.h"
 #include "spu/psi/core/ecdh_oprf/ecdh_oprf_selector.h"
@@ -62,14 +62,14 @@ namespace spu::psi {
 
 // send queque capacity
 inline constexpr size_t kQueueCapacity = 32;
-inline constexpr size_t kEcdhOprfPsiBatchSize = 4096;
+inline constexpr size_t kEcdhOprfPsiBatchSize = 8192;
 
 struct EcdhOprfPsiOptions {
   // Provides the link for server's evaluated data.
-  std::shared_ptr<yasl::link::Context> link0;
+  std::shared_ptr<yacl::link::Context> link0;
 
   // Provides the link for client's blind/evaluated data.
-  std::shared_ptr<yasl::link::Context> link1;
+  std::shared_ptr<yacl::link::Context> link1;
 
   // Now only support 2HashBased Ecdh-OPRF
   OprfType oprf_type = OprfType::Basic;
@@ -97,7 +97,7 @@ class EcdhOprfPsiServer {
             CreateEcdhOprfServer(options.oprf_type, options.curve_type)) {}
 
   EcdhOprfPsiServer(EcdhOprfPsiOptions options,
-                    yasl::ByteContainerView private_key)
+                    yacl::ByteContainerView private_key)
       : options_(options),
         oprf_server_(CreateEcdhOprfServer(private_key, options.oprf_type,
                                           options.curve_type)) {}
@@ -108,8 +108,11 @@ class EcdhOprfPsiServer {
    * @param batch_provider input data batch provider
    * @param cipher_store   masked data store
    */
-  void FullEvaluate(const std::shared_ptr<IBatchProvider>& batch_provider,
-                    const std::shared_ptr<ICipherStore>& cipher_store);
+  size_t FullEvaluate(const std::shared_ptr<IBatchProvider>& batch_provider,
+                      const std::shared_ptr<ICipherStore>& cipher_store);
+
+  size_t FullEvaluateAndSend(
+      const std::shared_ptr<IBatchProvider>& batch_provider);
 
   /**
    * @brief send masked data
@@ -162,7 +165,8 @@ class EcdhOprfPsiClient {
    *
    * @param batch_provider input data batch provider
    */
-  void SendBlindedItems(const std::shared_ptr<IBatchProvider>& batch_provider);
+  size_t SendBlindedItems(
+      const std::shared_ptr<IBatchProvider>& batch_provider);
 
   /**
    * @brief recv evaluated data, do Finalize and store to cipher_store

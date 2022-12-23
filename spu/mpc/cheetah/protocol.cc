@@ -33,16 +33,19 @@ namespace spu::mpc {
 
 std::unique_ptr<Object> makeCheetahProtocol(
     const RuntimeConfig& conf,
-    const std::shared_ptr<yasl::link::Context>& lctx) {
+    const std::shared_ptr<yacl::link::Context>& lctx) {
   semi2k::registerTypes();
 
-  auto obj = std::make_unique<Object>();
+  auto obj = std::make_unique<Object>("CHEETAH");
 
   // add communicator
   obj->addState<Communicator>(lctx);
 
   // register random states & kernels.
   obj->addState<PrgState>(lctx);
+
+  // add Z2k state.
+  obj->addState<Z2kState>(conf.field());
 
   // register public kernels.
   regPub2kKernels(obj.get());
@@ -83,6 +86,7 @@ std::unique_ptr<Object> makeCheetahProtocol(
   obj->regKernel<cheetah::RShiftB>();
   obj->regKernel<cheetah::ARShiftB>();
   obj->regKernel<cheetah::BitrevB>();
+  obj->regKernel<cheetah::RandA>();
 
   return obj;
 }

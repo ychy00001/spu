@@ -17,17 +17,18 @@
 #include <future>
 #include <utility>
 
-#include "yasl/utils/parallel.h"
-#include "yasl/utils/serialize.h"
+#include "yacl/utils/parallel.h"
+#include "yacl/utils/serialize.h"
 
 #include "spu/psi/core/communication.h"
 #include "spu/psi/cryptor/ecc_utils.h"
 
 namespace spu::psi {
 
-void EcdhOprfPsiServer::FullEvaluate(
+size_t EcdhOprfPsiServer::FullEvaluate(
     const std::shared_ptr<IBatchProvider>& batch_provider,
     const std::shared_ptr<ICipherStore>& cipher_store) {
+  size_t items_count = 0;
   size_t batch_count = 0;
   while (true) {
     auto items = batch_provider->ReadNextBatch(options_.batch_size);
@@ -38,9 +39,12 @@ void EcdhOprfPsiServer::FullEvaluate(
     for (const auto& masked_item : masked_items) {
       cipher_store->SaveSelf(masked_item);
     }
+    items_count += items.size();
     batch_count++;
   }
-  SPDLOG_INFO("{} finished, batch_count={}", __func__, batch_count);
+  SPDLOG_INFO("{} finished, batch_count={} items_count={}", __func__,
+              batch_count, items_count);
+  return items_count;
 }
 
 void EcdhOprfPsiServer::SendFinalEvaluatedItems(
@@ -80,6 +84,53 @@ void EcdhOprfPsiServer::SendFinalEvaluatedItems(
   SPDLOG_INFO("{} finished, batch_count={}", __func__, batch_count);
 }
 
+size_t EcdhOprfPsiServer::FullEvaluateAndSend(
+    const std::shared_ptr<IBatchProvider>& batch_provider) {
+  size_t items_count = 0;
+  size_t batch_count = 1;
+  size_t compare_length = oprf_server_->GetCompareLength();
+  std::vector<std::string> batch_items_next =
+      batch_provider->ReadNextBatch(options_.batch_size);
+
+  SPDLOG_INFO("Begin EvaluateAndSend items");
+
+  while (true) {
+    PsiDataBatch batch;
+    auto items = batch_items_next;
+    batch.is_last_batch = items.empty();
+
+    if (items.empty()) {
+      const auto tag = fmt::format(
+          "EcdhOprfPSI last batch,FinalEvaluatedItems:{}", batch_count);
+      options_.link0->SendAsync(options_.link0->NextRank(), batch.Serialize(),
+                                tag);
+      break;
+    }
+    std::future<void> f_prefetch = std::async([&] {
+      batch_items_next = batch_provider->ReadNextBatch(options_.batch_size);
+    });
+
+    auto masked_items = oprf_server_->FullEvaluate(items);
+
+    batch.flatten_bytes.reserve(items.size() * compare_length);
+    for (const auto& masked_item : masked_items) {
+      batch.flatten_bytes.append(masked_item);
+    }
+    // Send x^a.
+    const auto tag =
+        fmt::format("EcdhOprfPSI:FinalEvaluatedItems:{}", batch_count);
+    options_.link0->SendAsync(options_.link0->NextRank(), batch.Serialize(),
+                              tag);
+    batch_count++;
+    items_count += items.size();
+    f_prefetch.get();
+  }
+  SPDLOG_INFO("{} finished, batch_count={} items_count={}", __func__,
+              batch_count, items_count);
+
+  return items_count;
+}
+
 void EcdhOprfPsiServer::RecvBlindAndSendEvaluate() {
   size_t batch_count = 0;
 
@@ -106,7 +157,7 @@ void EcdhOprfPsiServer::RecvBlindAndSendEvaluate() {
     }
 
     // Fetch blinded y^r.
-    YASL_ENFORCE(blinded_batch.flatten_bytes.size() % ec_point_length == 0);
+    YACL_ENFORCE(blinded_batch.flatten_bytes.size() % ec_point_length == 0);
     size_t num_items = blinded_batch.flatten_bytes.size() / ec_point_length;
 
     std::vector<std::string> blinded_items(num_items);
@@ -134,6 +185,8 @@ void EcdhOprfPsiServer::RecvBlindAndSendEvaluate() {
 
 void EcdhOprfPsiClient::RecvFinalEvaluatedItems(
     const std::shared_ptr<ICipherStore>& cipher_store) {
+  SPDLOG_INFO("Begin Recv FinalEvaluatedItems items");
+
   size_t batch_count = 0;
   while (true) {
     const auto tag =
@@ -148,20 +201,27 @@ void EcdhOprfPsiClient::RecvFinalEvaluatedItems(
       break;
     }
 
-    YASL_ENFORCE(masked_batch.flatten_bytes.size() % compare_length_ == 0);
+    YACL_ENFORCE(masked_batch.flatten_bytes.size() % compare_length_ == 0);
     size_t num_items = masked_batch.flatten_bytes.size() / compare_length_;
 
+    std::vector<std::string> evaluated_items(num_items);
     for (size_t idx = 0; idx < num_items; ++idx) {
-      cipher_store->SavePeer(masked_batch.flatten_bytes.substr(
-          idx * compare_length_, compare_length_));
+      evaluated_items[idx] = masked_batch.flatten_bytes.substr(
+          idx * compare_length_, compare_length_);
     }
+    cipher_store->SavePeer(evaluated_items);
+
     batch_count++;
   }
+  SPDLOG_INFO("End Recv FinalEvaluatedItems items");
 }
 
-void EcdhOprfPsiClient::SendBlindedItems(
+size_t EcdhOprfPsiClient::SendBlindedItems(
     const std::shared_ptr<IBatchProvider>& batch_provider) {
   size_t batch_count = 0;
+  size_t items_count = 0;
+
+  SPDLOG_INFO("Begin Send BlindedItems items");
 
   while (true) {
     auto items = batch_provider->ReadNextBatch(options_.batch_size);
@@ -183,7 +243,7 @@ void EcdhOprfPsiClient::SendBlindedItems(
     std::vector<std::shared_ptr<IEcdhOprfClient>> oprf_clients(items.size());
     std::vector<std::string> blinded_items(items.size());
 
-    yasl::parallel_for(0, items.size(), 1, [&](int64_t begin, int64_t end) {
+    yacl::parallel_for(0, items.size(), 1, [&](int64_t begin, int64_t end) {
       for (int64_t idx = begin; idx < end; ++idx) {
         std::shared_ptr<IEcdhOprfClient> oprf_client =
             CreateEcdhOprfClient(options_.oprf_type, options_.curve_type);
@@ -214,17 +274,23 @@ void EcdhOprfPsiClient::SendBlindedItems(
     options_.link1->SendAsync(options_.link1->NextRank(),
                               blinded_batch.Serialize(), tag);
 
+    items_count += items.size();
     batch_count++;
   }
-  SPDLOG_INFO("{} finished, batch_count={}", __func__, batch_count);
+  SPDLOG_INFO("{} finished, batch_count={} items_count={}", __func__,
+              batch_count, items_count);
+
+  return items_count;
 }
 
 void EcdhOprfPsiClient::RecvEvaluatedItems(
     const std::shared_ptr<IBatchProvider>& batch_provider,
     const std::shared_ptr<ICipherStore>& cipher_store) {
+  SPDLOG_INFO("Begin Recv EvaluatedItems items");
+
   size_t batch_count = 0;
+
   while (true) {
-    ;
     const auto tag = fmt::format("EcdhOprfPSI:EvaluatedItems:{}", batch_count);
     PsiDataBatch masked_batch = PsiDataBatch::Deserialize(
         options_.link1->Recv(options_.link1->NextRank(), tag));
@@ -237,10 +303,10 @@ void EcdhOprfPsiClient::RecvEvaluatedItems(
     }
     auto items = batch_provider->ReadNextBatch(options_.batch_size);
 
-    YASL_ENFORCE(masked_batch.flatten_bytes.size() % ec_point_length_ == 0);
+    YACL_ENFORCE(masked_batch.flatten_bytes.size() % ec_point_length_ == 0);
     size_t num_items = masked_batch.flatten_bytes.size() / ec_point_length_;
 
-    YASL_ENFORCE(items.size() % num_items == 0);
+    YACL_ENFORCE(items.size() % num_items == 0);
 
     std::vector<std::string> evaluate_items(num_items);
     for (size_t idx = 0; idx < num_items; ++idx) {
@@ -264,22 +330,21 @@ void EcdhOprfPsiClient::RecvEvaluatedItems(
       queue_push_cv_.notify_one();
     }
 
-    YASL_ENFORCE(oprf_clients.size() == items.size(),
+    YACL_ENFORCE(oprf_clients.size() == items.size(),
                  "EcdhOprfServer should not be nullptr");
 
-    yasl::parallel_for(0, items.size(), 1, [&](int64_t begin, int64_t end) {
+    yacl::parallel_for(0, items.size(), 1, [&](int64_t begin, int64_t end) {
       for (int64_t idx = begin; idx < end; ++idx) {
         oprf_items[idx] =
             oprf_clients[idx]->Finalize(items[idx], evaluate_items[idx]);
       }
     });
 
-    for (uint64_t idx = 0; idx < items.size(); ++idx) {
-      cipher_store->SaveSelf(oprf_items[idx]);
-    }
+    cipher_store->SaveSelf(oprf_items);
 
     batch_count++;
   }
+  SPDLOG_INFO("End Recv EvaluatedItems");
 }
 
 }  // namespace spu::psi

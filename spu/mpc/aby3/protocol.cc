@@ -28,12 +28,12 @@ namespace spu::mpc {
 
 std::unique_ptr<Object> makeAby3Protocol(
     const RuntimeConfig& conf,
-    const std::shared_ptr<yasl::link::Context>& lctx) {
+    const std::shared_ptr<yacl::link::Context>& lctx) {
   aby3::registerTypes();
 
-  auto obj = std::make_unique<Object>();
+  auto obj = std::make_unique<Object>("ABY3");
 
-  obj->addState<aby3::Aby3State>(conf.field());
+  obj->addState<Z2kState>(conf.field());
 
   // add communicator
   obj->addState<Communicator>(lctx);
@@ -55,8 +55,7 @@ std::unique_ptr<Object> makeAby3Protocol(
   obj->regKernel<aby3::AddAA>();
   obj->regKernel<aby3::MulAP>();
   obj->regKernel<aby3::MulAA>();
-  // FIXME: temp disable MulA1B method.
-  // obj->regKernel<aby3::MulA1B>();
+  obj->regKernel<aby3::MulA1B>();
   obj->regKernel<aby3::MatMulAP>();
   obj->regKernel<aby3::MatMulAA>();
   obj->regKernel<aby3::LShiftA>();
@@ -68,9 +67,6 @@ std::unique_ptr<Object> makeAby3Protocol(
   obj->regKernel<aby3::TruncPrA>();
 #endif
 
-  // TODO: although msb has less network communication, it involves a lot of
-  // local computations. For small data, (a2b+shift) is still faster.
-  // We may add some strategy according to network condition and dataset.
   obj->regKernel<aby3::MsbA>();
 
   obj->regKernel<aby3::CommonTypeB>();
@@ -79,8 +75,9 @@ std::unique_ptr<Object> makeAby3Protocol(
   obj->regKernel<aby3::P2B>();
   obj->regKernel<aby3::AddBB>();
   obj->regKernel<aby3::A2B>();
-  obj->regKernel<aby3::B2AByOT>();
-  // obj->regKernel<aby3::B2A>();
+  obj->regKernel<aby3::B2ASelector>();
+  // obj->regKernel<aby3::B2AByOT>();
+  // obj->regKernel<aby3::B2AByPPA>();
   obj->regKernel<aby3::AndBP>();
   obj->regKernel<aby3::AndBB>();
   obj->regKernel<aby3::XorBP>();
@@ -89,6 +86,7 @@ std::unique_ptr<Object> makeAby3Protocol(
   obj->regKernel<aby3::RShiftB>();
   obj->regKernel<aby3::ARShiftB>();
   obj->regKernel<aby3::BitrevB>();
+  obj->regKernel<aby3::RandA>();
 
   return obj;
 }

@@ -15,8 +15,8 @@
 #pragma once
 
 #include "absl/types/span.h"
-#include "yasl/crypto/pseudo_random_generator.h"
-#include "yasl/link/link.h"
+#include "yacl/crypto/tools/prg.h"
+#include "yacl/link/link.h"
 
 #include "spu/core/array_ref.h"
 #include "spu/mpc/object.h"
@@ -46,10 +46,14 @@ class PrgState : public State {
  public:
   static constexpr char kBindName[] = "PrgState";
   static constexpr auto kAesType =
-      yasl::SymmetricCrypto::CryptoType::AES128_CTR;
+      yacl::crypto::SymmetricCrypto::CryptoType::AES128_CTR;
 
   PrgState();
-  explicit PrgState(std::shared_ptr<yasl::link::Context> lctx);
+  explicit PrgState(std::shared_ptr<yacl::link::Context> lctx);
+
+  bool hasLowCostFork() const override { return true; }
+
+  std::unique_ptr<State> fork() override;
 
   ArrayRef genPriv(FieldType field, size_t numel);
 
@@ -66,9 +70,15 @@ class PrgState : public State {
                                             bool ignore_second = false);
 
   template <typename T>
+  void fillPubl(absl::Span<T> r) {
+    pub_counter_ =
+        yacl::crypto::FillPseudoRandom(kAesType, pub_seed_, 0, pub_counter_, r);
+  }
+
+  template <typename T>
   void fillPriv(absl::Span<T> r) {
-    priv_counter_ =
-        yasl::FillPseudoRandom(kAesType, priv_seed_, 0, priv_counter_, r);
+    priv_counter_ = yacl::crypto::FillPseudoRandom(kAesType, priv_seed_, 0,
+                                                   priv_counter_, r);
   }
 
   template <typename T>
@@ -76,17 +86,17 @@ class PrgState : public State {
                     bool ignore_first = false, bool ignore_second = false) {
     uint64_t new_counter = prss_counter_;
     if (!ignore_first) {
-      new_counter =
-          yasl::FillPseudoRandom(kAesType, self_seed_, 0, prss_counter_, r0);
+      new_counter = yacl::crypto::FillPseudoRandom(kAesType, self_seed_, 0,
+                                                   prss_counter_, r0);
     }
     if (!ignore_second) {
-      new_counter =
-          yasl::FillPseudoRandom(kAesType, next_seed_, 0, prss_counter_, r1);
+      new_counter = yacl::crypto::FillPseudoRandom(kAesType, next_seed_, 0,
+                                                   prss_counter_, r1);
     }
 
     if (new_counter == prss_counter_) {
       // both part ignored, dummy run to update counter...
-      new_counter = yasl::DummyUpdateRandomCount(prss_counter_, r0);
+      new_counter = yacl::crypto::DummyUpdateRandomCount(prss_counter_, r0);
     }
     prss_counter_ = new_counter;
   }

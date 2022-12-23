@@ -12,18 +12,23 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <cstddef>
+
 #include "fmt/format.h"
+#include "gflags/gflags.h"
 #include "pybind11/iostream.h"
 #include "pybind11/numpy.h"
 #include "pybind11/pybind11.h"
 #include "pybind11/stl.h"
-#include "yasl/link/link.h"
+#include "yacl/link/link.h"
 
 #include "spu/compiler/common/compilation_context.h"
 #include "spu/compiler/compile.h"
+#include "spu/core/log.h"
 #include "spu/core/type_util.h"
+#include "spu/device/api.h"
 #include "spu/device/io.h"
-#include "spu/device/pphlo/executor.h"
+#include "spu/device/pphlo/pphlo_executor.h"
 #include "spu/kernel/context.h"
 #include "spu/kernel/value.h"
 #include "spu/psi/bucket_psi.h"
@@ -32,13 +37,20 @@
 
 namespace py = pybind11;
 
+namespace brpc {
+
+DECLARE_uint64(max_body_size);
+DECLARE_int64(socket_max_unwritten_bytes);
+
+}  // namespace brpc
+
 namespace spu {
 
 #define NO_GIL py::call_guard<py::gil_scoped_release>()
 
 void BindLink(py::module& m) {
-  using yasl::link::Context;
-  using yasl::link::ContextDesc;
+  using yacl::link::Context;
+  using yacl::link::ContextDesc;
 
   // TODO(jint) expose this tag to python?
   constexpr char PY_CALL_TAG[] = "PY_CALL";
@@ -105,7 +117,7 @@ void BindLink(py::module& m) {
       .def(
           "barrier",
           [&PY_CALL_TAG](const std::shared_ptr<Context>& self) -> void {
-            return yasl::link::Barrier(self, PY_CALL_TAG);
+            return yacl::link::Barrier(self, PY_CALL_TAG);
           },
           NO_GIL,
           "Blocks until all parties have reached this routine, aka MPI_Barrier")
@@ -113,7 +125,7 @@ void BindLink(py::module& m) {
           "all_gather",
           [&PY_CALL_TAG](const std::shared_ptr<Context>& self,
                          const std::string& in) -> std::vector<std::string> {
-            auto bufs = yasl::link::AllGather(self, in, PY_CALL_TAG);
+            auto bufs = yacl::link::AllGather(self, in, PY_CALL_TAG);
             std::vector<std::string> ret(bufs.size());
             for (size_t idx = 0; idx < bufs.size(); ++idx) {
               ret[idx] = std::string(bufs[idx].data<char>(), bufs[idx].size());
@@ -128,7 +140,7 @@ void BindLink(py::module& m) {
           [&PY_CALL_TAG](const std::shared_ptr<Context>& self,
                          const std::string& in,
                          size_t root) -> std::vector<std::string> {
-            auto bufs = yasl::link::Gather(self, in, root, PY_CALL_TAG);
+            auto bufs = yacl::link::Gather(self, in, root, PY_CALL_TAG);
             std::vector<std::string> ret(bufs.size());
             for (size_t idx = 0; idx < bufs.size(); ++idx) {
               ret[idx] = std::string(bufs[idx].data<char>(), bufs[idx].size());
@@ -140,7 +152,7 @@ void BindLink(py::module& m) {
           "broadcast",
           [&PY_CALL_TAG](const std::shared_ptr<Context>& self,
                          const std::string& in, size_t root) -> std::string {
-            auto buf = yasl::link::Broadcast(self, in, root, PY_CALL_TAG);
+            auto buf = yacl::link::Broadcast(self, in, root, PY_CALL_TAG);
             return {buf.data<char>(), static_cast<size_t>(buf.size())};
           },
           NO_GIL,
@@ -151,18 +163,48 @@ void BindLink(py::module& m) {
           [&PY_CALL_TAG](const std::shared_ptr<Context>& self,
                          const std::vector<std::string>& in,
                          size_t root) -> std::string {
-            auto buf = yasl::link::Scatter(self, {in.begin(), in.end()}, root,
+            auto buf = yacl::link::Scatter(self, {in.begin(), in.end()}, root,
                                            PY_CALL_TAG);
             return {buf.data<char>(), static_cast<size_t>(buf.size())};
           },
           NO_GIL,
-          "Sends data from one party to all other parties, aka MPI_Scatter");
+          "Sends data from one party to all other parties, aka MPI_Scatter")
+      .def(
+          "send",
+          [&PY_CALL_TAG](const std::shared_ptr<Context>& self, size_t dst_rank,
+                         const std::string& in) {
+            self->Send(dst_rank, in, PY_CALL_TAG);
+          },
+          "Sends data to dst_rank")
+      .def(
+          "send_async",
+          [&PY_CALL_TAG](const std::shared_ptr<Context>& self, size_t dst_rank,
+                         const std::string& in) {
+            self->SendAsync(dst_rank, yacl::Buffer(in), PY_CALL_TAG);
+          },
+          "Sends data to dst_rank asynchronously")
+      .def(
+          "recv",
+          [&PY_CALL_TAG](const std::shared_ptr<Context>& self,
+                         size_t src_rank) -> py::bytes {
+            auto buf = self->Recv(src_rank, PY_CALL_TAG);
+            return py::bytes{buf.data<char>(), static_cast<size_t>(buf.size())};
+          },  // Since it uses py bytes, we cannot release GIL here
+          "Receives data from src_rank")
+      .def(
+          "next_rank",
+          [](const std::shared_ptr<Context>& self, size_t strides = 1) {
+            return self->NextRank(strides);
+          },
+          NO_GIL, "Gets next party rank", py::arg("strides") = 1);
 
   m.def("create_brpc",
         [](const ContextDesc& desc,
            size_t self_rank) -> std::shared_ptr<Context> {
           py::gil_scoped_release release;
-          auto ctx = yasl::link::FactoryBrpc().CreateContext(desc, self_rank);
+          brpc::FLAGS_max_body_size = 2UL * 1024 * 1024 * 1024;
+          brpc::FLAGS_socket_max_unwritten_bytes = 2L * 1024 * 1024 * 1024;
+          auto ctx = yacl::link::FactoryBrpc().CreateContext(desc, self_rank);
           ctx->ConnectToMesh();
           return ctx;
         });
@@ -171,14 +213,14 @@ void BindLink(py::module& m) {
         [](const ContextDesc& desc,
            size_t self_rank) -> std::shared_ptr<Context> {
           py::gil_scoped_release release;
-          auto ctx = yasl::link::FactoryMem().CreateContext(desc, self_rank);
+
+          auto ctx = yacl::link::FactoryMem().CreateContext(desc, self_rank);
           ctx->ConnectToMesh();
           return ctx;
         });
 }
 
-// Wrap Processor, it's workaround for protobuf pybind11/protoc conflict.
-
+// Wrap Runtime, it's workaround for protobuf pybind11/protoc conflict.
 class RuntimeWrapper {
   std::unique_ptr<spu::HalContext> hctx_;
 
@@ -186,56 +228,38 @@ class RuntimeWrapper {
   spu::device::SymbolTable env_;
 
  public:
-  explicit RuntimeWrapper(std::shared_ptr<yasl::link::Context> lctx,
+  explicit RuntimeWrapper(std::shared_ptr<yacl::link::Context> lctx,
                           const std::string& config_pb) {
     spu::RuntimeConfig config;
-    YASL_ENFORCE(config.ParseFromString(config_pb));
+    YACL_ENFORCE(config.ParseFromString(config_pb));
 
     hctx_ = std::make_unique<spu::HalContext>(config, lctx);
   }
 
   void Run(const py::bytes& exec_pb) {
     spu::ExecutableProto exec;
-    YASL_ENFORCE(exec.ParseFromString(exec_pb));
+    YACL_ENFORCE(exec.ParseFromString(exec_pb));
 
-    MemProfilingGuard mem_guard;
-    if (hctx_->getTracingEnabled()) {
-      mem_guard.enable(0, "spu", exec.name());
-    }
-
-    spu::device::pphlo::PPHloExecutor executor(hctx_.get());
-    executor.runWithEnv(exec, &env_);
+    spu::device::pphlo::PPHloExecutor executor;
+    spu::device::execute(&executor, hctx_.get(), exec, &env_);
   }
 
   void SetVar(const std::string& name, const py::bytes& value) {
-    MemProfilingGuard mem_guard;
-    if (hctx_->getTracingEnabled()) {
-      mem_guard.enable(0, "set", name);
-    }
-
     ValueProto proto;
-    YASL_ENFORCE(proto.ParseFromString(value));
+    YACL_ENFORCE(proto.ParseFromString(value));
 
     env_.setVar(name, spu::Value::fromProto(proto));
   }
 
   py::bytes GetVar(const std::string& name) const {
-    MemProfilingGuard mem_guard;
-    if (hctx_->getTracingEnabled()) {
-      mem_guard.enable(0, "get", name);
-    }
-
     return env_.getVar(name).toProto().SerializeAsString();
   }
 
-  void DelVar(const std::string& name) {
-    MemProfilingGuard mem_guard;
-    if (hctx_->getTracingEnabled()) {
-      mem_guard.enable(0, "del", name);
-    }
-
-    env_.delVar(name);
+  py::bytes GetVarMeta(const std::string& name) const {
+    return env_.getVar(name).toMetaProto().SerializeAsString();
   }
+
+  void DelVar(const std::string& name) { env_.delVar(name); }
 
   void Clear() { env_.clear(); }
 };
@@ -268,7 +292,7 @@ spu::PtType PyFormatToPtType(const std::string& format) {
   FOR_PY_FORMATS(CASE)
 
 #undef CASE
-  YASL_THROW("unknown py format={}", format);
+  YACL_THROW("unknown py format={}", format);
 }
 
 std::string PtTypeToPyFormat(spu::PtType pt_type) {
@@ -280,7 +304,7 @@ std::string PtTypeToPyFormat(spu::PtType pt_type) {
   FOR_PY_FORMATS(CASE)
 
 #undef CASE
-  YASL_THROW("unknown pt_type={}", pt_type);
+  YACL_THROW("unknown pt_type={}", pt_type);
 }
 
 template <typename Iter>
@@ -288,7 +312,7 @@ std::vector<int64_t> ByteToElementStrides(const Iter& begin, const Iter& end,
                                           size_t elsize) {
   std::vector<int64_t> ret(std::distance(begin, end));
   std::transform(begin, end, ret.begin(), [&](int64_t c) -> int64_t {
-    YASL_ENFORCE(c % elsize == 0);
+    YACL_ENFORCE(c % elsize == 0);
     return c / elsize;
   });
   return ret;
@@ -307,7 +331,7 @@ class IoWrapper {
  public:
   IoWrapper(size_t world_size, const std::string& config_pb) {
     spu::RuntimeConfig config;
-    YASL_ENFORCE(config.ParseFromString(config_pb));
+    YACL_ENFORCE(config.ParseFromString(config_pb));
 
     ptr_ = std::make_unique<spu::device::IoClient>(world_size, config);
   }
@@ -332,7 +356,7 @@ class IoWrapper {
     std::vector<py::bytes> serialized(shares.size());
     for (size_t idx = 0; idx < shares.size(); ++idx) {
       std::string s;
-      YASL_ENFORCE(shares[idx].toProto().SerializeToString(&s));
+      YACL_ENFORCE(shares[idx].toProto().SerializeToString(&s));
       serialized[idx] = py::bytes(s);
     }
 
@@ -341,10 +365,10 @@ class IoWrapper {
 
   py::array reconstruct(const std::vector<std::string>& vals) {
     std::vector<spu::Value> shares;
-    YASL_ENFORCE(vals.size() > 0);
+    YACL_ENFORCE(vals.size() > 0);
     for (const auto& val_str : vals) {
       spu::ValueProto vp;
-      YASL_ENFORCE(vp.ParseFromString(val_str));
+      YACL_ENFORCE(vp.ParseFromString(val_str));
       shares.push_back(spu::Value::fromProto(vp));
     }
 
@@ -352,15 +376,15 @@ class IoWrapper {
     for (size_t idx = 1; idx < vals.size(); ++idx) {
       const auto& cur = shares[idx];
       const auto& prev = shares[idx - 1];
-      YASL_ENFORCE(cur.storage_type() == prev.storage_type(),
+      YACL_ENFORCE(cur.storage_type() == prev.storage_type(),
                    "storage type mismatch, {} {}", cur.storage_type(),
                    prev.storage_type());
-      YASL_ENFORCE(cur.dtype() == prev.dtype(), "data type mismatch, {} {}",
+      YACL_ENFORCE(cur.dtype() == prev.dtype(), "data type mismatch, {} {}",
                    cur.dtype(), prev.dtype());
     }
 
     auto ndarr = ptr_->combineShares(shares);
-    YASL_ENFORCE(ndarr.eltype().isa<PtTy>(), "expect decode to pt_type, got {}",
+    YACL_ENFORCE(ndarr.eltype().isa<PtTy>(), "expect decode to pt_type, got {}",
                  ndarr.eltype());
 
     const auto pt_type = ndarr.eltype().as<PtTy>()->pt_type();
@@ -376,27 +400,86 @@ void BindLibs(py::module& m) {
 
   m.def(
       "mem_psi",
-      [](const std::shared_ptr<yasl::link::Context>& lctx,
+      [](const std::shared_ptr<yacl::link::Context>& lctx,
          const std::string& config_pb,
          const std::vector<std::string>& items) -> std::vector<std::string> {
         psi::MemoryPsiConfig config;
-        YASL_ENFORCE(config.ParseFromString(config_pb));
+        YACL_ENFORCE(config.ParseFromString(config_pb));
 
         psi::MemoryPsi psi(config, lctx);
         return psi.Run(items);
       },
       NO_GIL);
 
-  m.def("bucket_psi",
-        [](const std::shared_ptr<yasl::link::Context>& lctx,
-           const std::string& config_pb) -> py::bytes {
-          psi::BucketPsiConfig config;
-          YASL_ENFORCE(config.ParseFromString(config_pb));
+  m.def(
+      "bucket_psi",
+      [](const std::shared_ptr<yacl::link::Context>& lctx,
+         const std::string& config_pb, bool ic_mode) -> py::bytes {
+        psi::BucketPsiConfig config;
+        YACL_ENFORCE(config.ParseFromString(config_pb));
 
-          psi::BucketPsi psi(config, lctx);
-          auto r = psi.Run();
-          return r.SerializeAsString();
-        });
+        psi::BucketPsi psi(config, lctx, ic_mode);
+        auto r = psi.Run();
+        return r.SerializeAsString();
+      },
+      py::arg("link_context"), py::arg("psi_config"),
+      py::arg("ic_mode") = false,
+      "Run bucket psi. ic_mode means run in interconnection mode");
+}
+
+void BindLogging(py::module& m) {
+  m.doc() = R"pbdoc(
+              SPU Logging Library
+                  )pbdoc";
+
+  py::enum_<logging::LogLevel>(m, "LogLevel")
+      .value("DEBUG", logging::LogLevel::debug)
+      .value("INFO", logging::LogLevel::info)
+      .value("WARN", logging::LogLevel::warn)
+      .value("ERROR", logging::LogLevel::error);
+
+  py::class_<logging::LogOptions>(m, "LogOptions",
+                                  "options for setup spu logger")
+      .def(py::init<>())
+      .def_readwrite("enable_console_logger",
+                     &logging::LogOptions::enable_console_logger)
+      .def_readwrite("system_log_path", &logging::LogOptions::system_log_path)
+      .def_readwrite("log_level", &logging::LogOptions::log_level)
+      .def_readwrite("max_log_file_size",
+                     &logging::LogOptions::max_log_file_size)
+      .def_readwrite("max_log_file_count",
+                     &logging::LogOptions::max_log_file_count)
+      .def(py::pickle(
+          [](const logging::LogOptions& opts) {  // __getstate__
+            /* Return a tuple that fully encodes the state of the object */
+            return py::make_tuple(opts.enable_console_logger,
+                                  opts.system_log_path, opts.log_level,
+                                  opts.max_log_file_size,
+                                  opts.max_log_file_count);
+          },
+          [](py::tuple t) {  // __setstate__
+            if (t.size() != 5) {
+              throw std::runtime_error("Invalid serialized data!");
+            }
+
+            /* Create a new C++ instance */
+            logging::LogOptions opts = logging::LogOptions();
+            opts.enable_console_logger = t[0].cast<bool>();
+            opts.system_log_path = t[1].cast<std::string>();
+            opts.log_level = t[2].cast<logging::LogLevel>();
+            opts.max_log_file_size = t[3].cast<size_t>();
+            opts.max_log_file_count = t[4].cast<size_t>();
+
+            return opts;
+          }));
+  ;
+
+  m.def(
+      "setup_logging",
+      [](const logging::LogOptions& options) -> void {
+        logging::SetupLogging(options);
+      },
+      py::arg("options") = logging::LogOptions(), NO_GIL);
 }
 
 PYBIND11_MODULE(_lib, m) {
@@ -405,7 +488,7 @@ PYBIND11_MODULE(_lib, m) {
       if (p) {
         std::rethrow_exception(p);
       }
-    } catch (const yasl::Exception& e) {
+    } catch (const yacl::Exception& e) {
       // Translate this exception to a standard RuntimeError
       PyErr_SetString(PyExc_RuntimeError,
                       fmt::format("what: \n\t{}\nstacktrace: \n{}\n", e.what(),
@@ -416,7 +499,7 @@ PYBIND11_MODULE(_lib, m) {
 
   // bind spu virtual machine.
   py::class_<RuntimeWrapper>(m, "RuntimeWrapper", "SPU virtual device")
-      .def(py::init<std::shared_ptr<yasl::link::Context>, std::string>(),
+      .def(py::init<std::shared_ptr<yacl::link::Context>, std::string>(),
            NO_GIL)
       .def("Run", &RuntimeWrapper::Run, NO_GIL)
       .def("SetVar",
@@ -425,6 +508,7 @@ PYBIND11_MODULE(_lib, m) {
                         // SetVar & GetVar are using
                         // py::byte, so they must acquire gil...
       .def("GetVar", &RuntimeWrapper::GetVar)
+      .def("GetVarMeta", &RuntimeWrapper::GetVarMeta)
       .def("DelVar", &RuntimeWrapper::DelVar);
 
   // bind spu io suite.
@@ -461,6 +545,9 @@ PYBIND11_MODULE(_lib, m) {
 
   py::module libs_m = m.def_submodule("libs");
   BindLibs(libs_m);
+
+  py::module logging_m = m.def_submodule("logging");
+  BindLogging(logging_m);
 }
 
 }  // namespace spu

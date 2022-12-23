@@ -14,13 +14,16 @@
 
 #include "spu/mpc/aby3/conversion.h"
 
+#include <functional>
+
 #include "spu/core/parallel_utils.h"
-#include "spu/core/profile.h"
+#include "spu/core/trace.h"
 #include "spu/mpc/aby3/ot.h"
 #include "spu/mpc/aby3/type.h"
 #include "spu/mpc/aby3/value.h"
 #include "spu/mpc/common/abprotocol.h"
 #include "spu/mpc/common/prg_state.h"
+#include "spu/mpc/common/pub2k.h"
 #include "spu/mpc/util/circuits.h"
 #include "spu/mpc/util/communicator.h"
 #include "spu/mpc/util/ring_ops.h"
@@ -34,7 +37,7 @@ namespace spu::mpc::aby3 {
 //
 // Latency: 2 + log(nbits) from 1 rotate and 1 ppa.
 ArrayRef A2B::proc(KernelEvalContext* ctx, const ArrayRef& in) const {
-  SPU_PROFILE_END_TRACE_KERNEL(ctx, in);
+  SPU_TRACE_MPC_LEAF(ctx, in);
 
   const auto field = in.eltype().as<Ring2k>()->field();
 
@@ -97,52 +100,135 @@ ArrayRef A2B::proc(KernelEvalContext* ctx, const ArrayRef& in) const {
   return add_bb(ctx->caller(), m, n);  // comm => log(k) + 1, 2k(logk) + k
 }
 
-// Referrence:
-// IV.E Boolean to Arithmetic Sharing (B2A), extended to 3pc settings.
-// https://encrypto.de/papers/DSZ15.pdf
-//
-// Latency: 4 + log(nbits) - 3 rotate + 1 send/rec + 1 ppa.
-// TODO(junfeng): Optimize anount of comm.
-ArrayRef B2A::proc(KernelEvalContext* ctx, const ArrayRef& x) const {
-  SPU_PROFILE_TRACE_KERNEL(ctx, x);
+ArrayRef B2ASelector::proc(KernelEvalContext* ctx, const ArrayRef& in) const {
+  const auto* in_ty = in.eltype().as<BShrTy>();
+  const size_t in_nbits = in_ty->nbits();
 
-  const auto field = x.eltype().as<Ring2k>()->field();
+  // PPA: latency=3+log(k), comm = 2*k*log(k) +3k
+  // OT:  latency=2, comm=K*K
+  if (in_nbits <= 8) {
+    return B2AByOT().proc(ctx, in);
+  } else {
+    return B2AByPPA().proc(ctx, in);
+  }
+}
+
+// Referrence:
+// 5.3 Share Conversions
+// https://eprint.iacr.org/2018/403.pdf
+//
+// In the semi-honest setting, this can be further optimized by having party 2
+// provide (−x2−x3) as private input and compute
+//   [x1]B = [x]B + [-x2-x3]B
+// using a parallel prefix adder. Regardless, x1 is revealed to parties
+// 1,3 and the final sharing is defined as
+//   [x]A := (x1, x2, x3)
+// Overall, the conversion requires 1 + log k rounds and k + k log k gates.
+//
+// TODO: convert to single share, will reduce number of rotate.
+ArrayRef B2AByPPA::proc(KernelEvalContext* ctx, const ArrayRef& in) const {
+  SPU_TRACE_MPC_LEAF(ctx, in);
+
+  const auto field = ctx->caller()->getState<Z2kState>()->getDefaultField();
+  const auto* in_ty = in.eltype().as<BShrTy>();
+  const size_t in_nbits = in_ty->nbits();
+
+  YACL_ENFORCE(in_nbits <= SizeOf(field) * 8, "invalid nbits={}", in_nbits);
+  const auto out_ty = makeType<AShrTy>(field);
+  ArrayRef out(out_ty, in.numel());
+  if (in_nbits == 0) {
+    // special case, it's known to be zero.
+    DISPATCH_ALL_FIELDS(field, "_", [&]() {
+      using AShrT = ring2k_t;
+      auto _out = ArrayView<std::array<AShrT, 2>>(out);
+      pforeach(0, in.numel(), [&](int64_t idx) {
+        _out[idx][0] = 0;
+        _out[idx][1] = 0;
+      });
+    });
+    return out;
+  }
+
   auto* comm = ctx->caller()->getState<Communicator>();
   auto* prg_state = ctx->caller()->getState<PrgState>();
-  auto numel = x.numel();
 
-  auto ra1 = prg_state->genPriv(field, numel);
-  auto ra2 = comm->rotate(ra1, kBindName);  // comm => 1, k
+  DISPATCH_UINT_PT_TYPES(in_ty->getBacktype(), "_", [&]() {
+    using BShrT = ScalarT;
+    auto _in = ArrayView<std::array<BShrT, 2>>(in);
+    DISPATCH_ALL_FIELDS(field, "_", [&]() {
+      using AShrT = ring2k_t;
 
-  auto [z0, z1] = prg_state->genPrssPair(field, numel);
-  auto rb1 = ring_xor(z0, z1);
-  if (comm->getRank() == 1) {
-    ring_xor_(rb1, ring_add(ra1, ra2));
-  }
-  auto rb2 = comm->rotate(rb1, kBindName);  // comm => 1, k
+      // first expand b share to a share length.
+      const auto expanded_ty = makeType<BShrTy>(
+          calcBShareBacktype(SizeOf(field) * 8), SizeOf(field) * 8);
+      ArrayRef x(expanded_ty, in.numel());
+      auto _x = ArrayView<std::array<AShrT, 2>>(x);
+      pforeach(0, in.numel(), [&](int64_t idx) {
+        _x[idx][0] = _in[idx][0];
+        _x[idx][1] = _in[idx][1];
+      });
 
-  // comm => log(k) + 1, 2k(logk) + k
-  auto x_plus_r = add_bb(ctx->caller(), x, makeBShare(rb1, rb2, field));
+      // P1 & P2 local samples ra, note P0's ra is not used.
+      std::vector<AShrT> ra0(in.numel());
+      std::vector<AShrT> ra1(in.numel());
+      std::vector<AShrT> rb0(in.numel());
+      std::vector<AShrT> rb1(in.numel());
 
-  const auto& x_plus_r_1 = getFirstShare(x_plus_r);
-  const auto& x_plus_r_2 = getSecondShare(x_plus_r);
+      prg_state->fillPrssPair(absl::MakeSpan(ra0), absl::MakeSpan(ra1));
+      prg_state->fillPrssPair(absl::MakeSpan(rb0), absl::MakeSpan(rb1));
 
-  auto y1 = ring_neg(ra1);
+      pforeach(0, in.numel(), [&](int64_t idx) {
+        const auto zb = rb0[idx] ^ rb1[idx];
+        if (comm->getRank() == 1) {
+          rb0[idx] = zb ^ (ra0[idx] + ra1[idx]);
+        } else {
+          rb0[idx] = zb;
+        }
+      });
+      rb1 = comm->rotate<AShrT>(rb0, "b2a.rand");  // comm => 1, k
 
-  // we only record the maximum communication, we need to manually add comm
-  const auto kcomm = y1.elsize() * y1.numel();
-  comm->addCommStatsManually(1, kcomm);  // comm => 1, k
+      // compute [x+r]B
+      ArrayRef r(expanded_ty, in.numel());
+      auto _r = ArrayView<std::array<AShrT, 2>>(r);
+      pforeach(0, in.numel(), [&](int64_t idx) {
+        _r[idx][0] = rb0[idx];
+        _r[idx][1] = rb1[idx];
+      });
 
-  if (comm->getRank() == 0) {
-    auto tmp = comm->recv(2, y1.eltype(), kBindName);
-    y1 = ring_xor(ring_xor(x_plus_r_1, x_plus_r_2), tmp);
-  } else if (comm->getRank() == 2) {
-    comm->sendAsync(0, x_plus_r_1, kBindName);
-  }
+      // comm => log(k) + 1, 2k(logk) + k
+      auto x_plus_r = add_bb(ctx->caller(), x, r);
+      auto _x_plus_r = ArrayView<std::array<AShrT, 2>>(x_plus_r);
 
-  auto y2 = comm->rotate(y1, kBindName);  // comm => 1, k
+      // reveal
+      std::vector<AShrT> x_plus_r_2(in.numel());
+      if (comm->getRank() == 0) {
+        x_plus_r_2 = comm->recv<AShrT>(2, "reveal.x_plus_r.to.P0");
+      } else if (comm->getRank() == 2) {
+        std::vector<AShrT> x_plus_r_0(in.numel());
+        pforeach(0, in.numel(),
+                 [&](int64_t idx) { x_plus_r_0[idx] = _x_plus_r[idx][0]; });
+        comm->sendAsync<AShrT>(0, x_plus_r_0, "reveal.x_plus_r.to.P0");
+      }
 
-  return makeAShare(y1, y2, field);
+      // P0 hold x+r, P1 & P2 hold -r, reuse ra0 and ra1 as output
+      pforeach(0, in.numel(), [&](int64_t idx) {
+        if (comm->getRank() == 0) {
+          ra0[idx] = _x_plus_r[idx][0] ^ _x_plus_r[idx][1] ^ x_plus_r_2[idx];
+        } else {
+          ra0[idx] = -ra0[idx];
+        }
+      });
+
+      ra1 = comm->rotate<AShrT>(ra0, "b2a.rotate");
+
+      auto _out = ArrayView<std::array<AShrT, 2>>(out);
+      pforeach(0, in.numel(), [&](int64_t idx) {
+        _out[idx][0] = ra0[idx];
+        _out[idx][1] = ra1[idx];
+      });
+    });
+  });
+  return out;
 }
 
 template <typename T>
@@ -160,7 +246,7 @@ static std::vector<bool> bitDecompose(ArrayView<T> in, size_t nbits) {
 
 template <typename T>
 static std::vector<T> bitCompose(absl::Span<T const> in, size_t nbits) {
-  YASL_ENFORCE(in.size() % nbits == 0);
+  YACL_ENFORCE(in.size() % nbits == 0);
   std::vector<T> out(in.size() / nbits, 0);
   pforeach(0, out.size(), [&](int64_t idx) {
     for (size_t bit = 0; bit < nbits; bit++) {
@@ -200,13 +286,13 @@ static std::vector<T> bitCompose(absl::Span<T const> in, size_t nbits) {
 // (the receiver) with input bit b2 learns the message c2 (not m[b2]) in the
 // first round, totaling 6k bits and 1 round.
 ArrayRef B2AByOT::proc(KernelEvalContext* ctx, const ArrayRef& in) const {
-  SPU_PROFILE_TRACE_KERNEL(ctx, in);
+  SPU_TRACE_MPC_LEAF(ctx, in);
 
-  const auto field = ctx->caller()->getState<Aby3State>()->getDefaultField();
+  const auto field = ctx->caller()->getState<Z2kState>()->getDefaultField();
   const auto* in_ty = in.eltype().as<BShrTy>();
   const size_t in_nbits = in_ty->nbits();
 
-  YASL_ENFORCE(in_nbits <= SizeOf(field) * 8, "invalid nbits={}", in_nbits);
+  YACL_ENFORCE(in_nbits <= SizeOf(field) * 8, "invalid nbits={}", in_nbits);
 
   ArrayRef out(makeType<AShrTy>(field), in.numel());
   if (in_nbits == 0) {
@@ -225,6 +311,13 @@ ArrayRef B2AByOT::proc(KernelEvalContext* ctx, const ArrayRef& in) const {
   auto* comm = ctx->caller()->getState<Communicator>();
   auto* prg_state = ctx->caller()->getState<PrgState>();
 
+  // P0 as the helper/dealer, helps to prepare correlated randomness.
+  // P1, P2 as the receiver and sender of OT.
+  const size_t pivot = std::hash<std::string>{}(comm->lctx()->Id()) % 3;
+  size_t P0 = pivot % 3;
+  size_t P1 = (pivot + 1) % 3;
+  size_t P2 = (pivot + 2) % 3;
+
   DISPATCH_UINT_PT_TYPES(in_ty->getBacktype(), "_", [&]() {
     using BShrT = ScalarT;
 
@@ -239,100 +332,92 @@ ArrayRef B2AByOT::proc(KernelEvalContext* ctx, const ArrayRef& in) const {
       std::vector<AShrT> r1(total_nbits);
       prg_state->fillPrssPair(absl::MakeSpan(r0), absl::MakeSpan(r1));
 
-      switch (comm->getRank()) {
-        case 0: {  // the helper
-          auto b2 = bitDecompose(ArrayView<BShrT>(getShare(in, 1)), in_nbits);
+      if (comm->getRank() == P0) {
+        // the helper
+        auto b2 = bitDecompose(ArrayView<BShrT>(getShare(in, 1)), in_nbits);
 
-          // gen masks with helper.
-          std::vector<AShrT> m0(total_nbits);
-          std::vector<AShrT> m1(total_nbits);
-          prg_state->fillPrssPair(absl::MakeSpan(m0), {}, false, true);
-          prg_state->fillPrssPair(absl::MakeSpan(m1), {}, false, true);
+        // gen masks with helper.
+        std::vector<AShrT> m0(total_nbits);
+        std::vector<AShrT> m1(total_nbits);
+        prg_state->fillPrssPair(absl::MakeSpan(m0), {}, false, true);
+        prg_state->fillPrssPair(absl::MakeSpan(m1), {}, false, true);
 
-          // build selected mask
-          YASL_ENFORCE(b2.size() == m0.size() && b2.size() == m1.size());
-          pforeach(0, total_nbits, [&](int64_t idx) {
-            m0[idx] = !b2[idx] ? m0[idx] : m1[idx];
-          });
+        // build selected mask
+        YACL_ENFORCE(b2.size() == m0.size() && b2.size() == m1.size());
+        pforeach(0, total_nbits,
+                 [&](int64_t idx) { m0[idx] = !b2[idx] ? m0[idx] : m1[idx]; });
 
-          // send selected masked to receiver.
-          comm->sendAsync<AShrT>(1, m0, "mc");
+        // send selected masked to receiver.
+        comm->sendAsync<AShrT>(P1, m0, "mc");
 
-          auto c1 = bitCompose<AShrT>(r0, in_nbits);
-          auto c2 = comm->recv<AShrT>(1, "c2");
+        auto c1 = bitCompose<AShrT>(r0, in_nbits);
+        auto c2 = comm->recv<AShrT>(P1, "c2");
 
-          pforeach(0, in.numel(), [&](int64_t idx) {
-            _out[idx][0] = c1[idx];
-            _out[idx][1] = c2[idx];
-          });
+        pforeach(0, in.numel(), [&](int64_t idx) {
+          _out[idx][0] = c1[idx];
+          _out[idx][1] = c2[idx];
+        });
+      } else if (comm->getRank() == P1) {
+        // the receiver
+        prg_state->fillPrssPair(absl::MakeSpan(r0), {}, false, false);
+        prg_state->fillPrssPair(absl::MakeSpan(r0), {}, false, false);
 
-          break;
-        }
-        case 1: {  // the receiver
-          prg_state->fillPrssPair(absl::MakeSpan(r0), {}, false, false);
-          prg_state->fillPrssPair(absl::MakeSpan(r0), {}, false, false);
+        auto b2 = bitDecompose(ArrayView<BShrT>(getShare(in, 0)), in_nbits);
 
-          auto b2 = bitDecompose(ArrayView<BShrT>(getShare(in, 0)), in_nbits);
+        // ot.recv
+        auto mc = comm->recv<AShrT>(P0, "mc");
+        auto m0 = comm->recv<AShrT>(P2, "m0");
+        auto m1 = comm->recv<AShrT>(P2, "m1");
 
-          // ot.recv
-          auto mc = comm->recv<AShrT>(0, "mc");
-          auto m0 = comm->recv<AShrT>(2, "m0");
-          auto m1 = comm->recv<AShrT>(2, "m1");
+        // rebuild c2 = (b1^b2^b3)-c1-c3
+        pforeach(0, total_nbits, [&](int64_t idx) {
+          mc[idx] = !b2[idx] ? m0[idx] ^ mc[idx] : m1[idx] ^ mc[idx];
+        });
+        auto c2 = bitCompose<AShrT>(mc, in_nbits);
+        comm->sendAsync<AShrT>(P0, c2, "c2");
+        auto c3 = bitCompose<AShrT>(r1, in_nbits);
 
-          // rebuild c2 = (b1^b2^b3)-c1-c3
-          pforeach(0, total_nbits, [&](int64_t idx) {
-            mc[idx] = !b2[idx] ? m0[idx] ^ mc[idx] : m1[idx] ^ mc[idx];
-          });
-          auto c2 = bitCompose<AShrT>(mc, in_nbits);
-          comm->sendAsync<AShrT>(0, c2, "c2");
-          auto c3 = bitCompose<AShrT>(r1, in_nbits);
+        pforeach(0, in.numel(), [&](int64_t idx) {
+          _out[idx][0] = c2[idx];
+          _out[idx][1] = c3[idx];
+        });
+      } else if (comm->getRank() == P2) {
+        // the sender.
+        auto c3 = bitCompose<AShrT>(r0, in_nbits);
+        auto c1 = bitCompose<AShrT>(r1, in_nbits);
 
-          pforeach(0, in.numel(), [&](int64_t idx) {
-            _out[idx][0] = c2[idx];
-            _out[idx][1] = c3[idx];
-          });
+        // c3 = r0, c1 = r1
+        // let mi := (i^b1^b3)−c1−c3 for i in {0, 1}
+        // reuse r's memory for m
+        pforeach(0, in.numel(), [&](int64_t idx) {
+          auto xx = _in[idx][0] ^ _in[idx][1];
+          for (size_t bit = 0; bit < in_nbits; bit++) {
+            size_t flat_idx = idx * in_nbits + bit;
+            AShrT t = r0[flat_idx] + r1[flat_idx];
+            r0[flat_idx] = ((xx >> bit) & 0x1) - t;
+            r1[flat_idx] = ((~xx >> bit) & 0x1) - t;
+          }
+        });
 
-          break;
-        }
-        case 2: {  // the sender.
-          auto c3 = bitCompose<AShrT>(r0, in_nbits);
-          auto c1 = bitCompose<AShrT>(r1, in_nbits);
+        // gen masks with helper.
+        std::vector<AShrT> m0(total_nbits);
+        std::vector<AShrT> m1(total_nbits);
+        prg_state->fillPrssPair({}, absl::MakeSpan(m0), true, false);
+        prg_state->fillPrssPair({}, absl::MakeSpan(m1), true, false);
+        pforeach(0, total_nbits, [&](int64_t idx) {
+          m0[idx] ^= r0[idx];
+          m1[idx] ^= r1[idx];
+        });
 
-          // c3 = r0, c1 = r1
-          // let mi := (i^b1^b3)−c1−c3 for i in {0, 1}
-          // reuse r's memory for m
-          pforeach(0, in.numel(), [&](int64_t idx) {
-            auto xx = _in[idx][0] ^ _in[idx][1];
-            for (size_t bit = 0; bit < in_nbits; bit++) {
-              size_t flat_idx = idx * in_nbits + bit;
-              AShrT t = r0[flat_idx] + r1[flat_idx];
-              r0[flat_idx] = ((xx >> bit) & 0x1) - t;
-              r1[flat_idx] = ((~xx >> bit) & 0x1) - t;
-            }
-          });
+        comm->sendAsync<AShrT>(P1, m0, "m0");
+        comm->sendAsync<AShrT>(P1, m1, "m1");
 
-          // gen masks with helper.
-          std::vector<AShrT> m0(total_nbits);
-          std::vector<AShrT> m1(total_nbits);
-          prg_state->fillPrssPair({}, absl::MakeSpan(m0), true, false);
-          prg_state->fillPrssPair({}, absl::MakeSpan(m1), true, false);
-          pforeach(0, total_nbits, [&](int64_t idx) {
-            m0[idx] ^= r0[idx];
-            m1[idx] ^= r1[idx];
-          });
-
-          comm->sendAsync<AShrT>(1, m0, "m0");
-          comm->sendAsync<AShrT>(1, m1, "m1");
-
-          pforeach(0, in.numel(), [&](int64_t idx) {
-            _out[idx][0] = c3[idx];
-            _out[idx][1] = c1[idx];
-          });
-
-          break;
-        }
-        default:
-          YASL_THROW("expected party=3, got={}", comm->getRank());
+        pforeach(0, in.numel(), [&](int64_t idx) {
+          _out[idx][0] = c3[idx];
+          _out[idx][1] = c1[idx];
+        });
+      } else {
+        YACL_THROW("expected party=3, got={}", comm->getRank());
       }
     });
   });
@@ -342,21 +427,19 @@ ArrayRef B2AByOT::proc(KernelEvalContext* ctx, const ArrayRef& in) const {
 
 ArrayRef AddBB::proc(KernelEvalContext* ctx, const ArrayRef& lhs,
                      const ArrayRef& rhs) const {
-  SPU_PROFILE_TRACE_KERNEL(ctx, lhs, rhs);
+  SPU_TRACE_MPC_LEAF(ctx, lhs, rhs);
 
   const auto* lhs_ty = lhs.eltype().as<BShrTy>();
   const auto* rhs_ty = rhs.eltype().as<BShrTy>();
 
-  // TODO: propogate out nbits;
-  // const size_t out_nbits = std::max(lhs_ty->nbits(), rhs_ty->nbits()) + 1;
-  YASL_ENFORCE(lhs_ty->nbits() == rhs_ty->nbits());
-  const size_t out_nbits = lhs_ty->nbits();
+  YACL_ENFORCE(lhs_ty->nbits() == rhs_ty->nbits());
+  const size_t nbits = lhs_ty->nbits();
 
   auto* obj = ctx->caller();
   auto cbb = makeABProtBasicBlock(obj);
   // sklansky has more local computation which leads to lower performance.
   // return sklansky<ArrayRef>(cbb, lhs, rhs, nbits);
-  return kogge_stone<ArrayRef>(cbb, lhs, rhs, out_nbits);
+  return kogge_stone<ArrayRef>(cbb, lhs, rhs, nbits);
 }
 
 }  // namespace spu::mpc::aby3

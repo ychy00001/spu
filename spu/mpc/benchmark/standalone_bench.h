@@ -17,7 +17,7 @@
 #include <functional>
 
 #include "benchmark/benchmark.h"
-#include "yasl/link/link.h"
+#include "yacl/link/link.h"
 
 #include "spu/core/shape_util.h"  // calcNumel
 #include "spu/mpc/api.h"
@@ -36,7 +36,7 @@ constexpr size_t kShiftBit = 2;
 
 using CreateComputeFn = std::function<std::unique_ptr<Object>(
     const RuntimeConfig& conf,
-    const std::shared_ptr<yasl::link::Context>& lctx)>;
+    const std::shared_ptr<yacl::link::Context>& lctx)>;
 
 class ComputeBench : public benchmark::Fixture {
  public:
@@ -84,13 +84,13 @@ uint32_t ComputeBench::bench_npc = 0;
       RuntimeConfig conf;                                                  \
       conf.set_field(field);                                               \
                                                                            \
-      util::simulate(npc, [&](std::shared_ptr<yasl::link::Context> lctx) { \
+      util::simulate(npc, [&](std::shared_ptr<yacl::link::Context> lctx) { \
         auto obj = bench_factory(conf, lctx);                              \
         auto* comm = obj->getState<Communicator>();                        \
                                                                            \
         /* GIVEN */                                                        \
-        auto p0 = rand_p(obj.get(), field, kNumel);                        \
-        auto p1 = rand_p(obj.get(), field, kNumel);                        \
+        auto p0 = rand_p(obj.get(), kNumel);                               \
+        auto p1 = rand_p(obj.get(), kNumel);                               \
         auto s0 = p2s(obj.get(), p0);                                      \
         auto s1 = p2s(obj.get(), p1);                                      \
                                                                            \
@@ -110,13 +110,13 @@ uint32_t ComputeBench::bench_npc = 0;
       RuntimeConfig conf;                                                  \
       conf.set_field(field);                                               \
                                                                            \
-      util::simulate(npc, [&](std::shared_ptr<yasl::link::Context> lctx) { \
+      util::simulate(npc, [&](std::shared_ptr<yacl::link::Context> lctx) { \
         auto obj = bench_factory(conf, lctx);                              \
         auto* comm = obj->getState<Communicator>();                        \
                                                                            \
         /* GIVEN */                                                        \
-        auto p0 = rand_p(obj.get(), field, kNumel);                        \
-        auto p1 = rand_p(obj.get(), field, kNumel);                        \
+        auto p0 = rand_p(obj.get(), kNumel);                               \
+        auto p1 = rand_p(obj.get(), kNumel);                               \
         auto s0 = p2s(obj.get(), p0);                                      \
                                                                            \
         /* WHEN */                                                         \
@@ -144,12 +144,12 @@ BM_DEFINE_BINARY_OP(xor)
       RuntimeConfig conf;                                                  \
       conf.set_field(field);                                               \
                                                                            \
-      util::simulate(npc, [&](std::shared_ptr<yasl::link::Context> lctx) { \
+      util::simulate(npc, [&](std::shared_ptr<yacl::link::Context> lctx) { \
         auto obj = bench_factory(conf, lctx);                              \
         auto* comm = obj->getState<Communicator>();                        \
                                                                            \
         /* GIVEN */                                                        \
-        auto p0 = rand_p(obj.get(), field, kNumel);                        \
+        auto p0 = rand_p(obj.get(), kNumel);                               \
         auto s0 = p2s(obj.get(), p0);                                      \
                                                                            \
         /* WHEN */                                                         \
@@ -168,12 +168,12 @@ BM_DEFINE_BINARY_OP(xor)
       RuntimeConfig conf;                                                  \
       conf.set_field(field);                                               \
                                                                            \
-      util::simulate(npc, [&](std::shared_ptr<yasl::link::Context> lctx) { \
+      util::simulate(npc, [&](std::shared_ptr<yacl::link::Context> lctx) { \
         auto obj = bench_factory(conf, lctx);                              \
         auto* comm = obj->getState<Communicator>();                        \
                                                                            \
         /* GIVEN */                                                        \
-        auto p0 = rand_p(obj.get(), field, kNumel);                        \
+        auto p0 = rand_p(obj.get(), kNumel);                               \
                                                                            \
         /* WHEN */                                                         \
         SPU_BM_SECTION(comm, OP##_p(obj.get(), p0);)                       \
@@ -197,12 +197,12 @@ BM_DEFINE_UNARY_OP(not )
       RuntimeConfig conf;                                                  \
       conf.set_field(field);                                               \
                                                                            \
-      util::simulate(npc, [&](std::shared_ptr<yasl::link::Context> lctx) { \
+      util::simulate(npc, [&](std::shared_ptr<yacl::link::Context> lctx) { \
         auto obj = bench_factory(conf, lctx);                              \
         auto* comm = obj->getState<Communicator>();                        \
                                                                            \
         /* GIVEN */                                                        \
-        auto p0 = rand_p(obj.get(), field, kNumel);                        \
+        auto p0 = rand_p(obj.get(), kNumel);                               \
         auto s0 = p2s(obj.get(), p0);                                      \
                                                                            \
         /* WHEN */                                                         \
@@ -221,12 +221,12 @@ BM_DEFINE_UNARY_OP(not )
       RuntimeConfig conf;                                                  \
       conf.set_field(field);                                               \
                                                                            \
-      util::simulate(npc, [&](std::shared_ptr<yasl::link::Context> lctx) { \
+      util::simulate(npc, [&](std::shared_ptr<yacl::link::Context> lctx) { \
         auto obj = bench_factory(conf, lctx);                              \
         auto* comm = obj->getState<Communicator>();                        \
                                                                            \
         /* GIVEN */                                                        \
-        auto p0 = rand_p(obj.get(), field, kNumel);                        \
+        auto p0 = rand_p(obj.get(), kNumel);                               \
                                                                            \
         /* WHEN */                                                         \
         SPU_BM_SECTION(comm, OP##_p(obj.get(), p0, BIT));                  \
@@ -254,7 +254,7 @@ SPU_BM_DEFINE_F(ComputeBench, truncpr_s)
     auto p0 = ring_rand_range(field, kNumel, /*min*/ 0,
                               /*max*/ 10000);
 
-    util::simulate(npc, [&](std::shared_ptr<yasl::link::Context> lctx) {
+    util::simulate(npc, [&](std::shared_ptr<yacl::link::Context> lctx) {
       auto obj = bench_factory(conf, lctx);
       auto* comm = obj->getState<Communicator>();
 
@@ -281,13 +281,13 @@ SPU_BM_DEFINE_F(ComputeBench, mmul_ss)
     const std::vector<int64_t> shape_A{M, K};
     const std::vector<int64_t> shape_B{K, N};
 
-    util::simulate(npc, [&](std::shared_ptr<yasl::link::Context> lctx) {
+    util::simulate(npc, [&](std::shared_ptr<yacl::link::Context> lctx) {
       auto obj = bench_factory(conf, lctx);
       auto* comm = obj->getState<Communicator>();
 
       /* GIVEN */
-      auto p0 = rand_p(obj.get(), field, calcNumel(shape_A));
-      auto p1 = rand_p(obj.get(), field, calcNumel(shape_B));
+      auto p0 = rand_p(obj.get(), calcNumel(shape_A));
+      auto p1 = rand_p(obj.get(), calcNumel(shape_B));
       auto s0 = p2s(obj.get(), p0);
       auto s1 = p2s(obj.get(), p1);
 
@@ -312,13 +312,13 @@ SPU_BM_DEFINE_F(ComputeBench, mmul_sp)
     const std::vector<int64_t> shape_A{M, K};
     const std::vector<int64_t> shape_B{K, N};
 
-    util::simulate(npc, [&](std::shared_ptr<yasl::link::Context> lctx) {
+    util::simulate(npc, [&](std::shared_ptr<yacl::link::Context> lctx) {
       auto obj = bench_factory(conf, lctx);
       auto* comm = obj->getState<Communicator>();
 
       /* GIVEN */
-      auto p0 = rand_p(obj.get(), field, calcNumel(shape_A));
-      auto p1 = rand_p(obj.get(), field, calcNumel(shape_B));
+      auto p0 = rand_p(obj.get(), calcNumel(shape_A));
+      auto p1 = rand_p(obj.get(), calcNumel(shape_B));
       auto s0 = p2s(obj.get(), p0);
 
       /* WHEN */
@@ -336,12 +336,12 @@ SPU_BM_DEFINE_F(ComputeBench, p2s)
     RuntimeConfig conf;
     conf.set_field(field);
 
-    util::simulate(npc, [&](std::shared_ptr<yasl::link::Context> lctx) {
+    util::simulate(npc, [&](std::shared_ptr<yacl::link::Context> lctx) {
       auto obj = bench_factory(conf, lctx);
       auto* comm = obj->getState<Communicator>();
 
       /* GIVEN */
-      auto p0 = rand_p(obj.get(), field, kNumel);
+      auto p0 = rand_p(obj.get(), kNumel);
 
       /* WHEN */
       SPU_BM_SECTION(comm, p2s(obj.get(), p0));
@@ -358,12 +358,12 @@ SPU_BM_DEFINE_F(ComputeBench, s2p)
     RuntimeConfig conf;
     conf.set_field(field);
 
-    util::simulate(npc, [&](std::shared_ptr<yasl::link::Context> lctx) {
+    util::simulate(npc, [&](std::shared_ptr<yacl::link::Context> lctx) {
       auto obj = bench_factory(conf, lctx);
       auto* comm = obj->getState<Communicator>();
 
       /* GIVEN */
-      auto p0 = rand_p(obj.get(), field, kNumel);
+      auto p0 = rand_p(obj.get(), kNumel);
       auto s0 = p2s(obj.get(), p0);
 
       /* WHEN */

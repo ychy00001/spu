@@ -19,7 +19,7 @@
 #include "xtensor/xview.hpp"
 
 // TODO: remove this
-#include "spu/core/profile.h"
+#include "spu/core/trace.h"
 #include "spu/core/vectorize.h"
 #include "spu/core/xt_helper.h"
 #include "spu/mpc/common/abprotocol.h"
@@ -34,7 +34,7 @@ namespace spu::mpc::semi2k {
 
 ArrayRef AddBB::proc(KernelEvalContext* ctx, const ArrayRef& x,
                      const ArrayRef& y) const {
-  SPU_PROFILE_TRACE_KERNEL(ctx, x, y);
+  SPU_TRACE_MPC_LEAF(ctx, x, y);
 
   const auto field = x.eltype().as<Ring2k>()->field();
   const size_t nbits = SizeOf(field) * 8;
@@ -43,7 +43,7 @@ ArrayRef AddBB::proc(KernelEvalContext* ctx, const ArrayRef& x,
 }
 
 ArrayRef A2B::proc(KernelEvalContext* ctx, const ArrayRef& x) const {
-  SPU_PROFILE_END_TRACE_KERNEL(ctx, x);
+  SPU_TRACE_MPC_LEAF(ctx, x);
 
   const auto field = x.eltype().as<Ring2k>()->field();
   auto* comm = ctx->caller()->getState<Communicator>();
@@ -66,7 +66,7 @@ ArrayRef A2B::proc(KernelEvalContext* ctx, const ArrayRef& x) const {
 }
 
 ArrayRef B2A::proc(KernelEvalContext* ctx, const ArrayRef& x) const {
-  SPU_PROFILE_TRACE_KERNEL(ctx, x);
+  SPU_TRACE_MPC_LEAF(ctx, x);
 
   const auto field = x.eltype().as<Ring2k>()->field();
   auto* comm = ctx->caller()->getState<Communicator>();
@@ -91,7 +91,7 @@ ArrayRef B2A::proc(KernelEvalContext* ctx, const ArrayRef& x) const {
 }
 
 ArrayRef B2A_Randbit::proc(KernelEvalContext* ctx, const ArrayRef& x) const {
-  SPU_PROFILE_TRACE_KERNEL(ctx, x);
+  SPU_TRACE_MPC_LEAF(ctx, x);
 
   const auto field = x.eltype().as<Ring2k>()->field();
   auto* comm = ctx->caller()->getState<Communicator>();
@@ -99,7 +99,7 @@ ArrayRef B2A_Randbit::proc(KernelEvalContext* ctx, const ArrayRef& x) const {
 
   const size_t numel = x.numel();
   const size_t nbits = x.eltype().as<BShare>()->nbits();
-  YASL_ENFORCE(nbits <= SizeOf(field) * 8, "invalid nbits={}", nbits);
+  YACL_ENFORCE(nbits <= SizeOf(field) * 8, "invalid nbits={}", nbits);
   if (nbits == 0) {
     // special case, it's known to be zero.
     return ring_zeros(field, numel).as(makeType<AShrTy>(field));

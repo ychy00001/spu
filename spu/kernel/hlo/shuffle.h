@@ -14,18 +14,16 @@
 
 #pragma once
 
-#include "mlir/IR/BuiltinTypes.h"
+#include "absl/types/span.h"
 
+#include "spu/kernel/context.h"
 #include "spu/kernel/value.h"
 
-namespace spu::device {
+namespace spu::kernel::hlo {
 
-class TypeChecker {
-public:
-  TypeChecker() = default;
-  virtual ~TypeChecker();
+// secret shuffle which means the order is kept secret between parties.
+std::vector<spu::Value> Shuffle(HalContext* ctx,
+                                absl::Span<const spu::Value> inputs,
+                                int64_t axis = 0);
 
-  virtual void check(mlir::Type, const spu::Value &value) const = 0;
-};
-
-} // namespace spu::device
+}  // namespace spu::kernel::hlo

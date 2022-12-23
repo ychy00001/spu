@@ -19,16 +19,23 @@
 namespace spu {
 
 HalContext::HalContext(RuntimeConfig config,
-                       std::shared_ptr<yasl::link::Context> lctx)
+                       std::shared_ptr<yacl::link::Context> lctx)
     : rt_config_(config),
       lctx_(lctx),
       prot_(mpc::Factory::CreateCompute(config, lctx)),
-      rand_engine_(config.public_random_seed()) {
-  setTracingEnabled(rt_config_.enable_action_trace());
-  prot()->setTracingEnabled(rt_config_.enable_action_trace());
-  setProfilingEnabled(rt_config_.enable_hal_profile());
-  // TODO: expose `enable_mpc_profile`
-  prot()->setProfilingEnabled(rt_config_.enable_hal_profile());
+      rand_engine_(config.public_random_seed()) {}
+
+std::unique_ptr<HalContext> HalContext::fork() {
+  auto new_hctx = std::unique_ptr<HalContext>(new HalContext);
+
+  new_hctx->rt_config_ = rt_config_;
+  if (lctx_) {
+    new_hctx->lctx_ = lctx_->Spawn();
+  }
+  new_hctx->prot_ = prot_->fork();
+  new_hctx->rand_engine_.seed(rand_engine_());
+
+  return new_hctx;
 }
 
 }  // namespace spu

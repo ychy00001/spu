@@ -55,12 +55,12 @@ class AShrTy : public TypeImpl<AShrTy, RingTy, Secret, AShare> {
 
 class BShrTy : public TypeImpl<BShrTy, TypeObject, Secret, BShare> {
   using Base = TypeImpl<BShrTy, TypeObject, Secret, BShare>;
-  PtType back_type_;
+  PtType back_type_ = PT_INVALID;
 
  public:
   using Base::Base;
   explicit BShrTy(PtType back_type, size_t nbits) {
-    YASL_ENFORCE(SizeOf(back_type) * 8 >= nbits,
+    YACL_ENFORCE(SizeOf(back_type) * 8 >= nbits,
                  "backtype={} has not enough bits={}", back_type, nbits);
     back_type_ = back_type;
     nbits_ = nbits;
@@ -74,10 +74,10 @@ class BShrTy : public TypeImpl<BShrTy, TypeObject, Secret, BShare> {
     auto comma = detail.find_first_of(',');
     auto back_type_str = detail.substr(0, comma);
     auto nbits_str = detail.substr(comma + 1);
-    YASL_ENFORCE(PtType_Parse(std::string(back_type_str), &back_type_),
+    YACL_ENFORCE(PtType_Parse(std::string(back_type_str), &back_type_),
                  "parse failed from={}", detail);
     nbits_ = std::stoul(std::string(nbits_str));
-  };
+  }
 
   std::string toString() const override {
     return fmt::format("{},{}", PtType_Name(back_type_), nbits_);
@@ -87,19 +87,10 @@ class BShrTy : public TypeImpl<BShrTy, TypeObject, Secret, BShare> {
 
   bool equals(TypeObject const* other) const override {
     auto const* derived_other = dynamic_cast<BShrTy const*>(other);
-    YASL_ENFORCE(derived_other);
+    YACL_ENFORCE(derived_other);
     return getBacktype() == derived_other->getBacktype() &&
            nbits() == derived_other->nbits();
   }
-};
-
-class Aby3State : public State {
-  FieldType field_;
-
- public:
-  static constexpr char kBindName[] = "Aby3State";
-  explicit Aby3State(FieldType field) : field_(field) {}
-  FieldType getDefaultField() const { return field_; }
 };
 
 void registerTypes();

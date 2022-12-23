@@ -1,4 +1,4 @@
-// Copyright 2021 Ant Group Co., Ltd.
+// Copyright 2022 Ant Group Co., Ltd.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -12,16 +12,25 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#pragma once
+#include "spu/kernel/hlo/const.h"
 
-#include "spu/device/type_checker.h"
+#include "gtest/gtest.h"
 
-namespace spu::device {
+#include "spu/core/ndarray_ref.h"
+#include "spu/kernel/context.h"
+#include "spu/kernel/hal/test_util.h"
+#include "spu/kernel/value.h"
 
-class PPHloTypeChecker : public TypeChecker {
-public:
-  ~PPHloTypeChecker() override = default;
-  void check(::mlir::Type type, const spu::Value &v) const override;
-};
+namespace spu::kernel::hlo {
 
-} // namespace spu::device
+TEST(ConstTest, Empty) {
+  HalContext hctx = hal::test::makeRefHalContext();
+
+  auto empty_c = Constant(&hctx, true, {0});
+
+  EXPECT_EQ(empty_c.numel(), 0);
+  EXPECT_EQ(empty_c.shape().size(), 1);
+  EXPECT_EQ(empty_c.shape()[0], 0);
+}
+
+}  // namespace spu::kernel::hlo

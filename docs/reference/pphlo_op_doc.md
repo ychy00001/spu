@@ -8,9 +8,9 @@ the passed configuration.
 
 See https://www.tensorflow.org/xla/operation_semantics#pad.
 
-Traits: InferTensorType, SameOperandsAndResultElementType
+Traits: AlwaysSpeculatableImplTrait, InferTensorType, SameOperandsAndResultElementType
 
-Interfaces: InferShapedTypeOpInterface, InferTypeOpInterface, NoSideEffect (MemoryEffectOpInterface)
+Interfaces: ConditionallySpeculatable, InferShapedTypeOpInterface, InferTypeOpInterface, NoMemoryEffect (MemoryEffectOpInterface)
 
 Effects: MemoryEffects::Effect{}
 
@@ -44,9 +44,9 @@ Returns `abs(operand)` element-wise.
 See
 https://www.tensorflow.org/xla/operation_semantics#element-wise_unary_functions.
 
-Traits: Elementwise, SameOperandsAndResultShape
+Traits: AlwaysSpeculatableImplTrait, Elementwise, SameOperandsAndResultShape, SameOperandsAndResultType
 
-Interfaces: NoSideEffect (MemoryEffectOpInterface)
+Interfaces: ConditionallySpeculatable, InferTypeOpInterface, NoMemoryEffect (MemoryEffectOpInterface)
 
 Effects: MemoryEffects::Effect{}
 
@@ -71,9 +71,9 @@ Returns `lhs + rhs` element-wise.
 See
 https://www.tensorflow.org/xla/operation_semantics#element-wise_binary_arithmetic_operations.
 
-Traits: Commutative, Elementwise, SameOperandsAndResultShape
+Traits: AlwaysSpeculatableImplTrait, Commutative, Elementwise, SameOperandsAndResultShape
 
-Interfaces: NoSideEffect (MemoryEffectOpInterface)
+Interfaces: ConditionallySpeculatable, NoMemoryEffect (MemoryEffectOpInterface)
 
 Effects: MemoryEffects::Effect{}
 
@@ -99,9 +99,9 @@ Returns `logical_and(lhs, rhs)` element-wise.
 See
 https://www.tensorflow.org/xla/operation_semantics#element-wise_binary_arithmetic_operations.
 
-Traits: Commutative, Elementwise, SameOperandsAndResultShape
+Traits: AlwaysSpeculatableImplTrait, Commutative, Elementwise, SameOperandsAndResultShape
 
-Interfaces: NoSideEffect (MemoryEffectOpInterface)
+Interfaces: ConditionallySpeculatable, NoMemoryEffect (MemoryEffectOpInterface)
 
 Effects: MemoryEffects::Effect{}
 
@@ -118,6 +118,42 @@ Effects: MemoryEffects::Effect{}
 | :----: | ----------- |
 &laquo;unnamed&raquo; | statically shaped tensor of PPHlo public type or PPHlo secret type values
 
+### `pphlo.argmax` (::mlir::pphlo::ArgMaxOp)
+
+ArgMax operator
+
+Returns the max value and index in a window.
+
+Traits: AlwaysSpeculatableImplTrait
+
+Interfaces: ConditionallySpeculatable, NoMemoryEffect (MemoryEffectOpInterface)
+
+Effects: MemoryEffects::Effect{}
+
+#### Attributes:
+
+| Attribute | MLIR Type | Description |
+| :-------: | :-------: | ----------- |
+| `window_dimensions` | ::mlir::DenseIntElementsAttr | 64-bit signless integer elements attribute
+| `window_strides` | ::mlir::DenseIntElementsAttr | 64-bit signless integer elements attribute
+| `base_dilations` | ::mlir::DenseIntElementsAttr | 64-bit signless integer elements attribute
+| `window_dilations` | ::mlir::DenseIntElementsAttr | 64-bit signless integer elements attribute
+| `padding` | ::mlir::DenseIntElementsAttr | 64-bit signless integer elements attribute
+| `onehot_index` | ::mlir::BoolAttr | bool attribute
+
+#### Operands:
+
+| Operand | Description |
+| :-----: | ----------- |
+| `input` | statically shaped tensor of PPHlo public type or PPHlo secret type values
+
+#### Results:
+
+| Result | Description |
+| :----: | ----------- |
+&laquo;unnamed&raquo; | statically shaped tensor of PPHlo public type or PPHlo secret type values
+&laquo;unnamed&raquo; | statically shaped tensor of public integer type or secret integer type values
+
 ### `pphlo.bitcast_convert` (::mlir::pphlo::BitcastConvertOp)
 
 BitcastConvert operator
@@ -130,15 +166,11 @@ Similar to a 'tf.bitcast' in TensorFlow, performs an element-wise bitcast
 
  See https://www.tensorflow.org/xla/operation_semantics#bitcastconverttype.
 
-Interfaces: NoSideEffect (MemoryEffectOpInterface)
+Traits: AlwaysSpeculatableImplTrait
+
+Interfaces: ConditionallySpeculatable, NoMemoryEffect (MemoryEffectOpInterface)
 
 Effects: MemoryEffects::Effect{}
-
-#### Attributes:
-
-| Attribute | MLIR Type | Description |
-| :-------: | :-------: | ----------- |
-| `elsize` | ::mlir::IntegerAttr | 64-bit signless integer attribute
 
 #### Operands:
 
@@ -171,9 +203,9 @@ The scalar value will be broadcast to every element in the target shape.
 
 See https://www.tensorflow.org/xla/broadcasting.
 
-Traits: SameOperandsAndResultElementType
+Traits: AlwaysSpeculatableImplTrait, SameOperandsAndResultElementType
 
-Interfaces: NoSideEffect (MemoryEffectOpInterface)
+Interfaces: ConditionallySpeculatable, NoMemoryEffect (MemoryEffectOpInterface)
 
 Effects: MemoryEffects::Effect{}
 
@@ -204,9 +236,9 @@ Returns `Ceil(operand)` element-wise.
 See
 https://www.tensorflow.org/xla/operation_semantics#element-wise_unary_functions.
 
-Traits: Elementwise, SameOperandsAndResultShape
+Traits: AlwaysSpeculatableImplTrait, Elementwise, SameOperandsAndResultShape, SameOperandsAndResultType
 
-Interfaces: NoSideEffect (MemoryEffectOpInterface)
+Interfaces: ConditionallySpeculatable, InferTypeOpInterface, NoMemoryEffect (MemoryEffectOpInterface)
 
 Effects: MemoryEffects::Effect{}
 
@@ -234,9 +266,9 @@ Note: All three arrays must be the same shape. Alternatively, as a
 
 See https://www.tensorflow.org/xla/operation_semantics#clamp.
 
-Traits: SameOperandsAndResultShape
+Traits: AlwaysSpeculatableImplTrait, SameOperandsAndResultShape
 
-Interfaces: NoSideEffect (MemoryEffectOpInterface)
+Interfaces: ConditionallySpeculatable, NoMemoryEffect (MemoryEffectOpInterface)
 
 Effects: MemoryEffects::Effect{}
 
@@ -262,9 +294,9 @@ Concatenates a set of tensors along the specified dimension.
 
 See https://www.tensorflow.org/xla/operation_semantics#concatenate.
 
-Traits: SameOperandsAndResultElementType
+Traits: AlwaysSpeculatableImplTrait, SameOperandsAndResultElementType
 
-Interfaces: NoSideEffect (MemoryEffectOpInterface)
+Interfaces: ConditionallySpeculatable, NoMemoryEffect (MemoryEffectOpInterface)
 
 Effects: MemoryEffects::Effect{}
 
@@ -291,9 +323,9 @@ Effects: MemoryEffects::Effect{}
 Constant operator
 
 Create a constant value.
-Traits: ConstantLike
+Traits: AlwaysSpeculatableImplTrait, ConstantLike
 
-Interfaces: NoSideEffect (MemoryEffectOpInterface)
+Interfaces: ConditionallySpeculatable, NoMemoryEffect (MemoryEffectOpInterface)
 
 Effects: MemoryEffects::Effect{}
 
@@ -319,9 +351,9 @@ e.g.fxp to int.
 See
 https://www.tensorflow.org/xla/operation_semantics#convertelementtype.
 
-Traits: Elementwise, SameOperandsAndResultShape
+Traits: AlwaysSpeculatableImplTrait, Elementwise, SameOperandsAndResultShape
 
-Interfaces: NoSideEffect (MemoryEffectOpInterface)
+Interfaces: ConditionallySpeculatable, NoMemoryEffect (MemoryEffectOpInterface)
 
 Effects: MemoryEffects::Effect{}
 
@@ -355,7 +387,9 @@ Computes a convolution of the kind used in neural networks.
 
 See https://www.tensorflow.org/xla/operation_semantics#conv_convolution.
 
-Interfaces: NoSideEffect (MemoryEffectOpInterface)
+Traits: AlwaysSpeculatableImplTrait
+
+Interfaces: ConditionallySpeculatable, NoMemoryEffect (MemoryEffectOpInterface)
 
 Effects: MemoryEffects::Effect{}
 
@@ -401,9 +435,9 @@ Returns `lhs / rhs` element-wise.
 See
 https://www.tensorflow.org/xla/operation_semantics#element-wise_binary_arithmetic_operations.
 
-Traits: Elementwise, SameOperandsAndResultShape
+Traits: AlwaysSpeculatableImplTrait, Elementwise, SameOperandsAndResultShape
 
-Interfaces: NoSideEffect (MemoryEffectOpInterface)
+Interfaces: ConditionallySpeculatable, NoMemoryEffect (MemoryEffectOpInterface)
 
 Effects: MemoryEffects::Effect{}
 
@@ -429,7 +463,9 @@ matrix/matrix multiplication.
 
 See https://www.tensorflow.org/xla/operation_semantics#dotgeneral.
 
-Interfaces: NoSideEffect (MemoryEffectOpInterface)
+Traits: AlwaysSpeculatableImplTrait
+
+Interfaces: ConditionallySpeculatable, NoMemoryEffect (MemoryEffectOpInterface)
 
 Effects: MemoryEffects::Effect{}
 
@@ -461,7 +497,9 @@ multiplication.
 
 See https://www.tensorflow.org/xla/operation_semantics#dot.
 
-Interfaces: NoSideEffect (MemoryEffectOpInterface)
+Traits: AlwaysSpeculatableImplTrait
+
+Interfaces: ConditionallySpeculatable, NoMemoryEffect (MemoryEffectOpInterface)
 
 Effects: MemoryEffects::Effect{}
 
@@ -486,7 +524,9 @@ Extracts a sub-array from the input array at dynamic start_indices.
 
 See https://www.tensorflow.org/xla/operation_semantics#dynamicslice.
 
-Interfaces: NoSideEffect (MemoryEffectOpInterface)
+Traits: AlwaysSpeculatableImplTrait
+
+Interfaces: ConditionallySpeculatable, NoMemoryEffect (MemoryEffectOpInterface)
 
 Effects: MemoryEffects::Effect{}
 
@@ -518,7 +558,9 @@ operand, with a slice update overwritten at start_indices.
 
 See https://www.tensorflow.org/xla/operation_semantics#dynamicupdateslice.
 
-Interfaces: NoSideEffect (MemoryEffectOpInterface)
+Traits: AlwaysSpeculatableImplTrait
+
+Interfaces: ConditionallySpeculatable, NoMemoryEffect (MemoryEffectOpInterface)
 
 Effects: MemoryEffects::Effect{}
 
@@ -545,9 +587,9 @@ Returns `lhs` == `rhs` element-wise.
 See
 https://www.tensorflow.org/xla/operation_semantics#element-wise_comparison_operations.
 
-Traits: Elementwise, SameOperandsAndResultShape
+Traits: AlwaysSpeculatableImplTrait, Elementwise, SameOperandsAndResultShape
 
-Interfaces: NoSideEffect (MemoryEffectOpInterface)
+Interfaces: ConditionallySpeculatable, NoMemoryEffect (MemoryEffectOpInterface)
 
 Effects: MemoryEffects::Effect{}
 
@@ -573,9 +615,9 @@ Returns `e ^ (operand)` element-wise.
 See
 https://www.tensorflow.org/xla/operation_semantics#element-wise_unary_functions.
 
-Traits: Elementwise, SameOperandsAndResultShape
+Traits: AlwaysSpeculatableImplTrait, Elementwise, SameOperandsAndResultShape, SameOperandsAndResultType
 
-Interfaces: NoSideEffect (MemoryEffectOpInterface)
+Interfaces: ConditionallySpeculatable, InferTypeOpInterface, NoMemoryEffect (MemoryEffectOpInterface)
 
 Effects: MemoryEffects::Effect{}
 
@@ -600,9 +642,9 @@ Returns `e^(operand) - 1` element-wise.
 See
 https://www.tensorflow.org/xla/operation_semantics#element-wise_unary_functions.
 
-Traits: Elementwise, SameOperandsAndResultShape
+Traits: AlwaysSpeculatableImplTrait, Elementwise, SameOperandsAndResultShape, SameOperandsAndResultType
 
-Interfaces: NoSideEffect (MemoryEffectOpInterface)
+Interfaces: ConditionallySpeculatable, InferTypeOpInterface, NoMemoryEffect (MemoryEffectOpInterface)
 
 Effects: MemoryEffects::Effect{}
 
@@ -627,9 +669,9 @@ Returns `Floor(operand)` element-wise.
 See
 https://www.tensorflow.org/xla/operation_semantics#element-wise_unary_functions.
 
-Traits: Elementwise, SameOperandsAndResultShape
+Traits: AlwaysSpeculatableImplTrait, Elementwise, SameOperandsAndResultShape, SameOperandsAndResultType
 
-Interfaces: NoSideEffect (MemoryEffectOpInterface)
+Interfaces: ConditionallySpeculatable, InferTypeOpInterface, NoMemoryEffect (MemoryEffectOpInterface)
 
 Effects: MemoryEffects::Effect{}
 
@@ -654,7 +696,9 @@ Stitches together several slices of `operand` from offsets specified in
 
 See https://www.tensorflow.org/xla/operation_semantics#gather.
 
-Interfaces: NoSideEffect (MemoryEffectOpInterface)
+Traits: AlwaysSpeculatableImplTrait
+
+Interfaces: ConditionallySpeculatable, NoMemoryEffect (MemoryEffectOpInterface)
 
 Effects: MemoryEffects::Effect{}
 
@@ -688,9 +732,9 @@ Returns `lhs` >= `rhs` element-wise.
 See
 https://www.tensorflow.org/xla/operation_semantics#element-wise_comparison_operations.
 
-Traits: Elementwise, SameOperandsAndResultShape
+Traits: AlwaysSpeculatableImplTrait, Elementwise, SameOperandsAndResultShape
 
-Interfaces: NoSideEffect (MemoryEffectOpInterface)
+Interfaces: ConditionallySpeculatable, NoMemoryEffect (MemoryEffectOpInterface)
 
 Effects: MemoryEffects::Effect{}
 
@@ -712,9 +756,9 @@ Effects: MemoryEffects::Effect{}
 greater comparison operator
 
 elementwise `lhs` > `rhs`.
-Traits: Elementwise, SameOperandsAndResultShape
+Traits: AlwaysSpeculatableImplTrait, Elementwise, SameOperandsAndResultShape
 
-Interfaces: NoSideEffect (MemoryEffectOpInterface)
+Interfaces: ConditionallySpeculatable, NoMemoryEffect (MemoryEffectOpInterface)
 
 Effects: MemoryEffects::Effect{}
 
@@ -740,7 +784,7 @@ Returns the result of executing either a true or false function depending on
 
 See https://www.tensorflow.org/xla/operation_semantics#conditional.
 
-Traits: RecursiveSideEffects, SingleBlockImplicitTerminator<ReturnOp>
+Traits: RecursiveMemoryEffects, SingleBlockImplicitTerminator<ReturnOp>
 
 #### Operands:
 
@@ -762,7 +806,9 @@ Creates a rank 1 array of values starting at zero and incrementing by one.
 
 See https://www.tensorflow.org/xla/operation_semantics#iota
 
-Interfaces: NoSideEffect (MemoryEffectOpInterface)
+Traits: AlwaysSpeculatableImplTrait
+
+Interfaces: ConditionallySpeculatable, NoMemoryEffect (MemoryEffectOpInterface)
 
 Effects: MemoryEffects::Effect{}
 
@@ -783,9 +829,9 @@ Effects: MemoryEffects::Effect{}
 less_equal comparison operator
 
 elementwise `lhs` <= `rhs`.
-Traits: Elementwise, SameOperandsAndResultShape
+Traits: AlwaysSpeculatableImplTrait, Elementwise, SameOperandsAndResultShape
 
-Interfaces: NoSideEffect (MemoryEffectOpInterface)
+Interfaces: ConditionallySpeculatable, NoMemoryEffect (MemoryEffectOpInterface)
 
 Effects: MemoryEffects::Effect{}
 
@@ -811,9 +857,9 @@ Returns `lhs` < `rhs` element-wise.
 See
 https://www.tensorflow.org/xla/operation_semantics#element-wise_comparison_operations.
 
-Traits: Elementwise, SameOperandsAndResultShape
+Traits: AlwaysSpeculatableImplTrait, Elementwise, SameOperandsAndResultShape
 
-Interfaces: NoSideEffect (MemoryEffectOpInterface)
+Interfaces: ConditionallySpeculatable, NoMemoryEffect (MemoryEffectOpInterface)
 
 Effects: MemoryEffects::Effect{}
 
@@ -839,9 +885,9 @@ Returns `log(operand + 1)` element-wise.
 See
 https://www.tensorflow.org/xla/operation_semantics#element-wise_unary_functions.
 
-Traits: Elementwise, SameOperandsAndResultShape
+Traits: AlwaysSpeculatableImplTrait, Elementwise, SameOperandsAndResultShape, SameOperandsAndResultType
 
-Interfaces: NoSideEffect (MemoryEffectOpInterface)
+Interfaces: ConditionallySpeculatable, InferTypeOpInterface, NoMemoryEffect (MemoryEffectOpInterface)
 
 Effects: MemoryEffects::Effect{}
 
@@ -866,9 +912,9 @@ Returns `log(operand)` element-wise.
 See
 https://www.tensorflow.org/xla/operation_semantics#element-wise_unary_functions.
 
-Traits: Elementwise, SameOperandsAndResultShape
+Traits: AlwaysSpeculatableImplTrait, Elementwise, SameOperandsAndResultShape, SameOperandsAndResultType
 
-Interfaces: NoSideEffect (MemoryEffectOpInterface)
+Interfaces: ConditionallySpeculatable, InferTypeOpInterface, NoMemoryEffect (MemoryEffectOpInterface)
 
 Effects: MemoryEffects::Effect{}
 
@@ -893,9 +939,9 @@ Returns `logistic(operand)` element-wise.
 See
 https://www.tensorflow.org/xla/operation_semantics#element-wise_unary_functions.
 
-Traits: Elementwise, SameOperandsAndResultShape, SameOperandsAndResultType
+Traits: AlwaysSpeculatableImplTrait, Elementwise, SameOperandsAndResultShape, SameOperandsAndResultType
 
-Interfaces: InferTypeOpInterface, NoSideEffect (MemoryEffectOpInterface)
+Interfaces: ConditionallySpeculatable, InferTypeOpInterface, NoMemoryEffect (MemoryEffectOpInterface)
 
 Effects: MemoryEffects::Effect{}
 
@@ -920,9 +966,9 @@ Returns `max(lhs, rhs)` element-wise.
 See
 https://www.tensorflow.org/xla/operation_semantics#element-wise_binary_arithmetic_operations.
 
-Traits: Commutative, Elementwise, SameOperandsAndResultShape
+Traits: AlwaysSpeculatableImplTrait, Commutative, Elementwise, SameOperandsAndResultShape
 
-Interfaces: NoSideEffect (MemoryEffectOpInterface)
+Interfaces: ConditionallySpeculatable, NoMemoryEffect (MemoryEffectOpInterface)
 
 Effects: MemoryEffects::Effect{}
 
@@ -939,6 +985,43 @@ Effects: MemoryEffects::Effect{}
 | :----: | ----------- |
 &laquo;unnamed&raquo; | statically shaped tensor of PPHlo public type or PPHlo secret type values
 
+### `pphlo.maxpool_scatter` (::mlir::pphlo::MaxPoolScatterOp)
+
+MaxPool Scatter operator
+
+Generates a result which is the value of the input array `operand`,
+with several slices (at indices specified by `scatter_indices`)
+updated with the values in `updates` using `update_computation`.
+
+See https://www.tensorflow.org/xla/operation_semantics#scatter.
+
+Traits: AlwaysSpeculatableImplTrait
+
+Interfaces: ConditionallySpeculatable, NoMemoryEffect (MemoryEffectOpInterface)
+
+Effects: MemoryEffects::Effect{}
+
+#### Attributes:
+
+| Attribute | MLIR Type | Description |
+| :-------: | :-------: | ----------- |
+| `window_dimensions` | ::mlir::DenseIntElementsAttr | 64-bit signless integer elements attribute
+| `window_strides` | ::mlir::DenseIntElementsAttr | 64-bit signless integer elements attribute
+| `padding` | ::mlir::DenseIntElementsAttr | 64-bit signless integer elements attribute
+
+#### Operands:
+
+| Operand | Description |
+| :-----: | ----------- |
+| `scatter_indices` | statically shaped tensor of public integer type or secret integer type values
+| `update` | statically shaped tensor of PPHlo public type or PPHlo secret type values
+
+#### Results:
+
+| Result | Description |
+| :----: | ----------- |
+&laquo;unnamed&raquo; | statically shaped tensor of PPHlo public type or PPHlo secret type values
+
 ### `pphlo.minimum` (::mlir::pphlo::MinOp)
 
 Minimum operator
@@ -948,9 +1031,9 @@ Returns `min(lhs, rhs)` element-wise.
 See
 https://www.tensorflow.org/xla/operation_semantics#element-wise_binary_arithmetic_operations.
 
-Traits: Commutative, Elementwise, SameOperandsAndResultShape
+Traits: AlwaysSpeculatableImplTrait, Commutative, Elementwise, SameOperandsAndResultShape
 
-Interfaces: NoSideEffect (MemoryEffectOpInterface)
+Interfaces: ConditionallySpeculatable, NoMemoryEffect (MemoryEffectOpInterface)
 
 Effects: MemoryEffects::Effect{}
 
@@ -976,9 +1059,9 @@ Returns `lhs * rhs` element-wise.
 See
 https://www.tensorflow.org/xla/operation_semantics#element-wise_binary_arithmetic_operations.
 
-Traits: Commutative, Elementwise, SameOperandsAndResultShape
+Traits: AlwaysSpeculatableImplTrait, Commutative, Elementwise, SameOperandsAndResultShape
 
-Interfaces: NoSideEffect (MemoryEffectOpInterface)
+Interfaces: ConditionallySpeculatable, NoMemoryEffect (MemoryEffectOpInterface)
 
 Effects: MemoryEffects::Effect{}
 
@@ -1005,9 +1088,9 @@ wise.
 See
 https://www.tensorflow.org/xla/operation_semantics#element-wise_unary_functions.
 
-Traits: Elementwise, SameOperandsAndResultShape
+Traits: AlwaysSpeculatableImplTrait, Elementwise, SameOperandsAndResultShape, SameOperandsAndResultType
 
-Interfaces: NoSideEffect (MemoryEffectOpInterface)
+Interfaces: ConditionallySpeculatable, InferTypeOpInterface, NoMemoryEffect (MemoryEffectOpInterface)
 
 Effects: MemoryEffects::Effect{}
 
@@ -1032,9 +1115,9 @@ Returns `lhs` != `rhs` element-wise.
 See
 https://www.tensorflow.org/xla/operation_semantics#element-wise_comparison_operations.
 
-Traits: Elementwise, SameOperandsAndResultShape
+Traits: AlwaysSpeculatableImplTrait, Elementwise, SameOperandsAndResultShape
 
-Interfaces: NoSideEffect (MemoryEffectOpInterface)
+Interfaces: ConditionallySpeculatable, NoMemoryEffect (MemoryEffectOpInterface)
 
 Effects: MemoryEffects::Effect{}
 
@@ -1060,9 +1143,9 @@ Returns `!operand` element-wise.
 See
 https://www.tensorflow.org/xla/operation_semantics#element-wise_unary_functions.
 
-Traits: Elementwise, SameOperandsAndResultShape, SameOperandsAndResultType
+Traits: AlwaysSpeculatableImplTrait, Elementwise, SameOperandsAndResultShape, SameOperandsAndResultType
 
-Interfaces: InferTypeOpInterface, NoSideEffect (MemoryEffectOpInterface)
+Interfaces: ConditionallySpeculatable, InferTypeOpInterface, NoMemoryEffect (MemoryEffectOpInterface)
 
 Effects: MemoryEffects::Effect{}
 
@@ -1087,9 +1170,9 @@ Returns `logical_or(lhs, rhs)` element-wise.
 See
 https://www.tensorflow.org/xla/operation_semantics#element-wise_binary_arithmetic_operations.
 
-Traits: Commutative, Elementwise, SameOperandsAndResultShape
+Traits: AlwaysSpeculatableImplTrait, Commutative, Elementwise, SameOperandsAndResultShape
 
-Interfaces: NoSideEffect (MemoryEffectOpInterface)
+Interfaces: ConditionallySpeculatable, NoMemoryEffect (MemoryEffectOpInterface)
 
 Effects: MemoryEffects::Effect{}
 
@@ -1115,9 +1198,9 @@ Returns `lhs ^ rhs` element-wise.
 See
 https://www.tensorflow.org/xla/operation_semantics#element-wise_binary_arithmetic_operations.
 
-Traits: Elementwise, SameOperandsAndResultShape
+Traits: AlwaysSpeculatableImplTrait, Elementwise, SameOperandsAndResultShape
 
-Interfaces: NoSideEffect (MemoryEffectOpInterface)
+Interfaces: ConditionallySpeculatable, NoMemoryEffect (MemoryEffectOpInterface)
 
 Effects: MemoryEffects::Effect{}
 
@@ -1134,6 +1217,30 @@ Effects: MemoryEffects::Effect{}
 | :----: | ----------- |
 &laquo;unnamed&raquo; | statically shaped tensor of PPHlo public type or PPHlo secret type values
 
+### `pphlo.prefer_a` (::mlir::pphlo::PreferAOp)
+
+Prefer AShare operator
+
+Convert input to AShare if possible.
+
+Traits: AlwaysSpeculatableImplTrait, Elementwise, SameOperandsAndResultShape, SameOperandsAndResultType
+
+Interfaces: ConditionallySpeculatable, InferTypeOpInterface, NoMemoryEffect (MemoryEffectOpInterface)
+
+Effects: MemoryEffects::Effect{}
+
+#### Operands:
+
+| Operand | Description |
+| :-----: | ----------- |
+| `operand` | statically shaped tensor of PPHlo public type or PPHlo secret type values
+
+#### Results:
+
+| Result | Description |
+| :----: | ----------- |
+&laquo;unnamed&raquo; | statically shaped tensor of PPHlo public type or PPHlo secret type values
+
 ### `pphlo.reciprocal` (::mlir::pphlo::ReciprocalOp)
 
 Reciprocal operator
@@ -1143,9 +1250,9 @@ Returns `1.0 / operand` element-wise.
 See
 https://www.tensorflow.org/xla/operation_semantics#element-wise_unary_functions.
 
-Traits: Elementwise, SameOperandsAndResultShape, SameOperandsAndResultType
+Traits: AlwaysSpeculatableImplTrait, Elementwise, SameOperandsAndResultShape, SameOperandsAndResultType
 
-Interfaces: InferTypeOpInterface, NoSideEffect (MemoryEffectOpInterface)
+Interfaces: ConditionallySpeculatable, InferTypeOpInterface, NoMemoryEffect (MemoryEffectOpInterface)
 
 Effects: MemoryEffects::Effect{}
 
@@ -1170,7 +1277,7 @@ in parallel.
 
 See https://www.tensorflow.org/xla/operation_semantics#reduce.
 
-Traits: RecursiveSideEffects, SameVariadicOperandSize, SingleBlockImplicitTerminator<ReturnOp>
+Traits: RecursiveMemoryEffects, SameVariadicOperandSize, SingleBlockImplicitTerminator<ReturnOp>
 
 #### Attributes:
 
@@ -1200,7 +1307,7 @@ each window of one or more arrays.
 
 See https://www.tensorflow.org/xla/operation_semantics#reducewindow.
 
-Traits: RecursiveSideEffects, SameVariadicOperandSize, SingleBlockImplicitTerminator<ReturnOp>
+Traits: RecursiveMemoryEffects, SameVariadicOperandSize, SingleBlockImplicitTerminator<ReturnOp>
 
 #### Attributes:
 
@@ -1234,9 +1341,9 @@ Returns `lhs % rhs` element-wise.
 See
 https://www.tensorflow.org/xla/operation_semantics#element-wise_binary_arithmetic_operations.
 
-Traits: Elementwise, SameOperandsAndResultShape
+Traits: AlwaysSpeculatableImplTrait, Elementwise, SameOperandsAndResultShape
 
-Interfaces: NoSideEffect (MemoryEffectOpInterface)
+Interfaces: ConditionallySpeculatable, NoMemoryEffect (MemoryEffectOpInterface)
 
 Effects: MemoryEffects::Effect{}
 
@@ -1261,9 +1368,9 @@ Reshapes the dimensions of `operand` into a new configuration.
 
 See https://www.tensorflow.org/xla/operation_semantics#reshape.
 
-Traits: SameOperandsAndResultElementType
+Traits: AlwaysSpeculatableImplTrait, SameOperandsAndResultElementType
 
-Interfaces: NoSideEffect (MemoryEffectOpInterface)
+Interfaces: ConditionallySpeculatable, NoMemoryEffect (MemoryEffectOpInterface)
 
 Effects: MemoryEffects::Effect{}
 
@@ -1286,9 +1393,9 @@ Effects: MemoryEffects::Effect{}
   
 
 
-Traits: Terminator
+Traits: AlwaysSpeculatableImplTrait, Terminator
 
-Interfaces: NoSideEffect (MemoryEffectOpInterface)
+Interfaces: ConditionallySpeculatable, NoMemoryEffect (MemoryEffectOpInterface)
 
 Effects: MemoryEffects::Effect{}
 
@@ -1307,9 +1414,9 @@ Reverses the specified dimensions of `operand` according to the given
 
 See https://www.tensorflow.org/xla/operation_semantics#rev_reverse.
 
-Traits: SameOperandsAndResultType
+Traits: AlwaysSpeculatableImplTrait, SameOperandsAndResultType
 
-Interfaces: InferTypeOpInterface, NoSideEffect (MemoryEffectOpInterface)
+Interfaces: ConditionallySpeculatable, InferTypeOpInterface, NoMemoryEffect (MemoryEffectOpInterface)
 
 Effects: MemoryEffects::Effect{}
 
@@ -1357,6 +1464,34 @@ Traits: SameOperandsAndResultElementType
 | :----: | ----------- |
 &laquo;unnamed&raquo; | statically shaped tensor of PPHlo public type or PPHlo secret type values
 
+### `pphlo.round_nearest_afz` (::mlir::pphlo::RoundOp)
+
+Round operator, ties away from zero
+
+Returns `Round(operand)` element-wise, rounding to nearest integer with
+half-way cases rounding away from zero.
+
+See
+https://www.tensorflow.org/xla/operation_semantics#element-wise_unary_functions.
+
+Traits: AlwaysSpeculatableImplTrait, Elementwise, SameOperandsAndResultShape, SameOperandsAndResultType
+
+Interfaces: ConditionallySpeculatable, InferTypeOpInterface, NoMemoryEffect (MemoryEffectOpInterface)
+
+Effects: MemoryEffects::Effect{}
+
+#### Operands:
+
+| Operand | Description |
+| :-----: | ----------- |
+| `operand` | statically shaped tensor of public floating-point type or secret floating-point type values
+
+#### Results:
+
+| Result | Description |
+| :----: | ----------- |
+&laquo;unnamed&raquo; | statically shaped tensor of public floating-point type or secret floating-point type values
+
 ### `pphlo.rsqrt` (::mlir::pphlo::RsqrtOp)
 
 Reciprocal of square-root operator
@@ -1366,9 +1501,9 @@ Returns `rsqrt(operand)` element-wise.
 See
 https://www.tensorflow.org/xla/operation_semantics#element-wise_unary_functions.
 
-Traits: Elementwise, SameOperandsAndResultShape
+Traits: AlwaysSpeculatableImplTrait, Elementwise, SameOperandsAndResultShape, SameOperandsAndResultType
 
-Interfaces: NoSideEffect (MemoryEffectOpInterface)
+Interfaces: ConditionallySpeculatable, InferTypeOpInterface, NoMemoryEffect (MemoryEffectOpInterface)
 
 Effects: MemoryEffects::Effect{}
 
@@ -1397,7 +1532,7 @@ combined using the `scatter` function.
 
 See https://www.tensorflow.org/xla/operation_semantics#selectandscatter.
 
-Traits: RecursiveSideEffects
+Traits: RecursiveMemoryEffects
 
 #### Attributes:
 
@@ -1432,9 +1567,9 @@ broadcasted.
 
 See https://www.tensorflow.org/xla/operation_semantics#select.
 
-Traits: SameOperandsAndResultShape
+Traits: AlwaysSpeculatableImplTrait
 
-Interfaces: NoSideEffect (MemoryEffectOpInterface)
+Interfaces: ConditionallySpeculatable, NoMemoryEffect (MemoryEffectOpInterface)
 
 Effects: MemoryEffects::Effect{}
 
@@ -1461,9 +1596,9 @@ Returns `lhs << rhs` element-wise.
 See
 https://www.tensorflow.org/xla/operation_semantics#element-wise_binary_arithmetic_operations.
 
-Traits: Elementwise, SameOperandsAndResultShape
+Traits: AlwaysSpeculatableImplTrait, Elementwise, SameOperandsAndResultShape
 
-Interfaces: NoSideEffect (MemoryEffectOpInterface)
+Interfaces: ConditionallySpeculatable, NoMemoryEffect (MemoryEffectOpInterface)
 
 Effects: MemoryEffects::Effect{}
 
@@ -1489,9 +1624,9 @@ Returns arithmetic `lhs >> rhs` element-wise.
 See
 https://www.tensorflow.org/xla/operation_semantics#element-wise_binary_arithmetic_operations.
 
-Traits: Elementwise, SameOperandsAndResultShape
+Traits: AlwaysSpeculatableImplTrait, Elementwise, SameOperandsAndResultShape
 
-Interfaces: NoSideEffect (MemoryEffectOpInterface)
+Interfaces: ConditionallySpeculatable, NoMemoryEffect (MemoryEffectOpInterface)
 
 Effects: MemoryEffects::Effect{}
 
@@ -1517,9 +1652,9 @@ Returns logical `lhs >> rhs` element-wise.
 See
 https://www.tensorflow.org/xla/operation_semantics#element-wise_binary_arithmetic_operations.
 
-Traits: Elementwise, SameOperandsAndResultShape
+Traits: AlwaysSpeculatableImplTrait, Elementwise, SameOperandsAndResultShape
 
-Interfaces: NoSideEffect (MemoryEffectOpInterface)
+Interfaces: ConditionallySpeculatable, NoMemoryEffect (MemoryEffectOpInterface)
 
 Effects: MemoryEffects::Effect{}
 
@@ -1551,9 +1686,9 @@ sign(x) = -1  : x < 0
 See
 https://www.tensorflow.org/xla/operation_semantics#element-wise_unary_functions.
 
-Traits: Elementwise, SameOperandsAndResultShape, SameOperandsAndResultType
+Traits: AlwaysSpeculatableImplTrait, Elementwise, SameOperandsAndResultShape, SameOperandsAndResultType
 
-Interfaces: InferTypeOpInterface, NoSideEffect (MemoryEffectOpInterface)
+Interfaces: ConditionallySpeculatable, InferTypeOpInterface, NoMemoryEffect (MemoryEffectOpInterface)
 
 Effects: MemoryEffects::Effect{}
 
@@ -1580,9 +1715,9 @@ the rank of the input.
 
 See https://www.tensorflow.org/xla/operation_semantics#slice
 
-Traits: SameOperandsAndResultElementType
+Traits: AlwaysSpeculatableImplTrait, SameOperandsAndResultElementType
 
-Interfaces: NoSideEffect (MemoryEffectOpInterface)
+Interfaces: ConditionallySpeculatable, NoMemoryEffect (MemoryEffectOpInterface)
 
 Effects: MemoryEffects::Effect{}
 
@@ -1615,7 +1750,7 @@ Sorts the given `operands` at the given `dimension` with the given
 
 See https://www.tensorflow.org/xla/operation_semantics#sort.
 
-Traits: RecursiveSideEffects, SameOperandsAndResultShape
+Traits: RecursiveMemoryEffects, SameOperandsAndResultShape
 
 #### Attributes:
 
@@ -1645,9 +1780,9 @@ Returns `sqrt(operand)` element-wise.
 See
 https://www.tensorflow.org/xla/operation_semantics#element-wise_unary_functions.
 
-Traits: Elementwise, SameOperandsAndResultShape
+Traits: AlwaysSpeculatableImplTrait, Elementwise, SameOperandsAndResultShape, SameOperandsAndResultType
 
-Interfaces: NoSideEffect (MemoryEffectOpInterface)
+Interfaces: ConditionallySpeculatable, InferTypeOpInterface, NoMemoryEffect (MemoryEffectOpInterface)
 
 Effects: MemoryEffects::Effect{}
 
@@ -1672,9 +1807,9 @@ Returns `lhs - rhs` element-wise.
 See
 https://www.tensorflow.org/xla/operation_semantics#element-wise_binary_arithmetic_operations.
 
-Traits: Elementwise, SameOperandsAndResultShape
+Traits: AlwaysSpeculatableImplTrait, Elementwise, SameOperandsAndResultShape
 
-Interfaces: NoSideEffect (MemoryEffectOpInterface)
+Interfaces: ConditionallySpeculatable, NoMemoryEffect (MemoryEffectOpInterface)
 
 Effects: MemoryEffects::Effect{}
 
@@ -1700,9 +1835,9 @@ Returns `tanh(operand)` element-wise.
 See
 https://www.tensorflow.org/xla/operation_semantics#element-wise_unary_functions.
 
-Traits: Elementwise, SameOperandsAndResultShape
+Traits: AlwaysSpeculatableImplTrait, Elementwise, SameOperandsAndResultShape, SameOperandsAndResultType
 
-Interfaces: NoSideEffect (MemoryEffectOpInterface)
+Interfaces: ConditionallySpeculatable, InferTypeOpInterface, NoMemoryEffect (MemoryEffectOpInterface)
 
 Effects: MemoryEffects::Effect{}
 
@@ -1728,9 +1863,9 @@ Permutes the dimensions of `operand` according to the given `permutation`.
 
 See https://www.tensorflow.org/xla/operation_semantics#transpose.
 
-Traits: SameOperandsAndResultElementType
+Traits: AlwaysSpeculatableImplTrait, SameOperandsAndResultElementType
 
-Interfaces: NoSideEffect (MemoryEffectOpInterface)
+Interfaces: ConditionallySpeculatable, NoMemoryEffect (MemoryEffectOpInterface)
 
 Effects: MemoryEffects::Effect{}
 
@@ -1761,7 +1896,7 @@ Returns the result of executing a body function until the cond body
 
 See https://www.tensorflow.org/xla/operation_semantics#while.
 
-Traits: PPHLO_PairwiseSameOperandAndResultType, RecursiveSideEffects, SingleBlockImplicitTerminator<ReturnOp>
+Traits: PPHLO_PairwiseSameOperandAndResultType, RecursiveMemoryEffects, SingleBlockImplicitTerminator<ReturnOp>
 
 #### Operands:
 
@@ -1784,9 +1919,9 @@ Returns `logical_xor(lhs, rhs)` element-wise.
 See
 https://www.tensorflow.org/xla/operation_semantics#element-wise_binary_arithmetic_operations.
 
-Traits: Commutative, Elementwise, SameOperandsAndResultShape
+Traits: AlwaysSpeculatableImplTrait, Commutative, Elementwise, SameOperandsAndResultShape
 
-Interfaces: NoSideEffect (MemoryEffectOpInterface)
+Interfaces: ConditionallySpeculatable, NoMemoryEffect (MemoryEffectOpInterface)
 
 Effects: MemoryEffects::Effect{}
 

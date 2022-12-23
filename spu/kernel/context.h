@@ -17,44 +17,45 @@
 #include <memory>
 #include <random>
 
-#include "yasl/link/link.h"
+#include "yacl/link/link.h"
 
-#include "spu/core/profile.h"
+#include "spu/core/trace.h"
 #include "spu/mpc/object.h"
 
 #include "spu/spu.pb.h"
 
 namespace spu {
 
-// Toggles put here are internal features
-struct FeatureControl {
-  bool enable_xla_verifier = false;
-  std::function<void(bool)> verifier_handler{[](bool) {}};
-};
-
 // The hal evaluation context for all spu operators.
-class HalContext final : public ProfilingContext {
-  const RuntimeConfig rt_config_;
+class HalContext final {
+  RuntimeConfig rt_config_;
 
-  const std::shared_ptr<yasl::link::Context> lctx_;
+  std::shared_ptr<yacl::link::Context> lctx_;
 
   std::unique_ptr<mpc::Object> prot_;
 
   std::default_random_engine rand_engine_;
 
-  FeatureControl fc_;
+  HalContext() = default;
 
  public:
   explicit HalContext(RuntimeConfig config,
-                      std::shared_ptr<yasl::link::Context> lctx);
+                      std::shared_ptr<yacl::link::Context> lctx);
 
   HalContext(const HalContext& other) = delete;
   HalContext& operator=(const HalContext& other) = delete;
 
+  // all parties get a 'corresponding' hal context when forked.
+  std::unique_ptr<HalContext> fork();
+
+  std::string name() const {
+    return fmt::format("CTX:{}", std::this_thread::get_id());
+  }
+
   HalContext(HalContext&& other) = default;
 
   //
-  const std::shared_ptr<yasl::link::Context>& lctx() const { return lctx_; }
+  const std::shared_ptr<yacl::link::Context>& lctx() const { return lctx_; }
 
   mpc::Object* prot() const { return prot_.get(); }
 
@@ -67,16 +68,8 @@ class HalContext final : public ProfilingContext {
   // Return current working runtime config.
   const RuntimeConfig& rt_config() const { return rt_config_; }
 
-  FeatureControl& feature_control() { return fc_; }
-
   //
   std::default_random_engine& rand_engine() { return rand_engine_; }
 };
-
-#define SPU_TRACE_HLO(...) __TRACE_OP("hlo", __func__, __VA_ARGS__)
-
-#define SPU_TRACE_HAL(...) __TRACE_OP("hal", __func__, __VA_ARGS__)
-#define SPU_PROFILE_OP(...) __PROFILE_OP("hal", __func__, __VA_ARGS__)
-#define SPU_PROFILE_END_OP(...) __PROFILE_END_OP("hal", __func__, __VA_ARGS__)
 
 }  // namespace spu

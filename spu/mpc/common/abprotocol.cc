@@ -14,26 +14,181 @@
 
 #include "spu/mpc/common/abprotocol.h"
 
-#include "spu/core/profile.h"
+#include <future>
+
+#include "spu/core/parallel_utils.h"
+#include "spu/core/trace.h"
 #include "spu/mpc/common/pub2k.h"
 
 namespace spu::mpc {
 namespace {
 
-ArrayRef _Lazy2B(Object* obj, const ArrayRef& in) {
+// TODO(jint) may be we should move tiling to a `tiling` layer or dialect.
+ArrayRef block_par_unary(KernelEvalContext* ctx, std::string_view fn_name,
+                         const ArrayRef& in) {
+  const int64_t kBlockSize = kMinTaskSize;
+  if (!ctx->caller()->hasLowCostFork() || in.numel() <= kBlockSize) {
+    return ctx->caller()->call(fn_name, in);
+  }
+
+  std::string kBindName(fn_name);
+  SPU_TRACE_MPC_LEAF(ctx, in);
+
+  auto* obj = ctx->caller();
+  std::vector<std::unique_ptr<Object>> sub_objs;
+
+  const int64_t numBlocks =
+      in.numel() / kBlockSize + ((in.numel() % kBlockSize) != 0 ? 1 : 0);
+
+  for (int64_t blk_idx = 0; blk_idx < numBlocks; blk_idx++) {
+    sub_objs.push_back(obj->fork());
+  }
+
+  std::vector<std::future<ArrayRef>> futures;
+  for (int64_t blk_idx = 0; blk_idx < numBlocks; blk_idx++) {
+    futures.push_back(std::async(
+        [&](int64_t index) {
+          int64_t begin = index * kBlockSize;
+          int64_t end = std::min(begin + kBlockSize, in.numel());
+
+          return sub_objs[index]->call(fn_name, in.slice(begin, end));
+        },
+        blk_idx));
+  }
+
+  std::vector<ArrayRef> out_slices;
+  for (int64_t blk_idx = 0; blk_idx < numBlocks; blk_idx++) {
+    out_slices.push_back(futures[blk_idx].get());
+  }
+
+  // Assume out.numel = in.numel
+  ArrayRef out(out_slices[0].eltype(), in.numel());
+  for (int64_t blk_idx = 0; blk_idx < numBlocks; blk_idx++) {
+    int64_t begin = blk_idx * kBlockSize;
+    int64_t end = std::min(begin + kBlockSize, in.numel());
+    std::memcpy(&out.at(begin), &out_slices[blk_idx].at(0),
+                (end - begin) * out.elsize());
+  }
+
+  return out;
+}
+
+ArrayRef block_par_unary_with_size(KernelEvalContext* ctx,
+                                   std::string_view fn_name, const ArrayRef& in,
+                                   size_t bits) {
+  const int64_t kBlockSize = kMinTaskSize;
+  if (!ctx->caller()->hasLowCostFork() || in.numel() <= kBlockSize) {
+    return ctx->caller()->call(fn_name, in, bits);
+  }
+
+  std::string kBindName(fn_name);
+  SPU_TRACE_MPC_LEAF(ctx, in);
+
+  auto* obj = ctx->caller();
+  std::vector<std::unique_ptr<Object>> sub_objs;
+
+  const int64_t numBlocks =
+      in.numel() / kBlockSize + ((in.numel() % kBlockSize) != 0 ? 1 : 0);
+
+  for (int64_t blk_idx = 0; blk_idx < numBlocks; blk_idx++) {
+    sub_objs.push_back(obj->fork());
+  }
+
+  std::vector<std::future<ArrayRef>> futures;
+  for (int64_t blk_idx = 0; blk_idx < numBlocks; blk_idx++) {
+    futures.push_back(std::async(
+        [&](int64_t index) {
+          int64_t begin = index * kBlockSize;
+          int64_t end = std::min(begin + kBlockSize, in.numel());
+          return sub_objs[index]->call(fn_name, in.slice(begin, end), bits);
+        },
+        blk_idx));
+  }
+
+  std::vector<ArrayRef> out_slices;
+  for (int64_t blk_idx = 0; blk_idx < numBlocks; blk_idx++) {
+    out_slices.push_back(futures[blk_idx].get());
+  }
+
+  // Assume out.numel = in.numel
+  ArrayRef out(out_slices[0].eltype(), in.numel());
+  for (int64_t blk_idx = 0; blk_idx < numBlocks; blk_idx++) {
+    int64_t begin = blk_idx * kBlockSize;
+    int64_t end = std::min(begin + kBlockSize, in.numel());
+    std::memcpy(&out.at(begin), &out_slices[blk_idx].at(0),
+                (end - begin) * out.elsize());
+  }
+
+  return out;
+}
+
+ArrayRef block_par_binary(KernelEvalContext* ctx, std::string_view fn_name,
+                          const ArrayRef& lhs, const ArrayRef& rhs) {
+  const int64_t kBlockSize = kMinTaskSize;
+  YACL_ENFORCE(lhs.numel() == rhs.numel());
+  if (!ctx->caller()->hasLowCostFork() || lhs.numel() <= kBlockSize) {
+    return ctx->caller()->call(fn_name, lhs, rhs);
+  }
+
+  const int64_t numel = lhs.numel();
+
+  std::string kBindName(fn_name);
+  SPU_TRACE_MPC_LEAF(ctx, lhs);
+
+  auto* obj = ctx->caller();
+  std::vector<std::unique_ptr<Object>> sub_objs;
+
+  const int64_t numBlocks =
+      numel / kBlockSize + ((numel % kBlockSize) != 0 ? 1 : 0);
+
+  for (int64_t blk_idx = 0; blk_idx < numBlocks; blk_idx++) {
+    sub_objs.push_back(obj->fork());
+  }
+
+  std::vector<std::future<ArrayRef>> futures;
+  for (int64_t blk_idx = 0; blk_idx < numBlocks; blk_idx++) {
+    futures.push_back(std::async(
+        [&](int64_t index) {
+          int64_t begin = index * kBlockSize;
+          int64_t end = std::min(begin + kBlockSize, numel);
+
+          return sub_objs[index]->call(fn_name, lhs.slice(begin, end),
+                                       rhs.slice(begin, end));
+        },
+        blk_idx));
+  }
+
+  std::vector<ArrayRef> out_slices;
+  for (int64_t blk_idx = 0; blk_idx < numBlocks; blk_idx++) {
+    out_slices.push_back(futures[blk_idx].get());
+  }
+
+  // Assume out.numel = numel
+  ArrayRef out(out_slices[0].eltype(), numel);
+  for (int64_t blk_idx = 0; blk_idx < numBlocks; blk_idx++) {
+    int64_t begin = blk_idx * kBlockSize;
+    int64_t end = std::min(begin + kBlockSize, numel);
+    std::memcpy(&out.at(begin), &out_slices[blk_idx].at(0),
+                (end - begin) * out.elsize());
+  }
+
+  return out;
+}
+
+ArrayRef _Lazy2B(KernelEvalContext* ctx, const ArrayRef& in) {
   if (in.eltype().isa<AShare>()) {
-    return obj->call("a2b", in);
+    return block_par_unary(ctx, "a2b", in);
   } else {
-    YASL_ENFORCE(in.eltype().isa<BShare>());
+    YACL_ENFORCE(in.eltype().isa<BShare>());
     return in;
   }
 }
 
-ArrayRef _Lazy2A(Object* obj, const ArrayRef& in) {
+ArrayRef _Lazy2A(KernelEvalContext* ctx, const ArrayRef& in) {
   if (in.eltype().isa<BShare>()) {
-    return obj->call("b2a", in);
+    return block_par_unary(ctx, "b2a", in);
   } else {
-    YASL_ENFORCE(in.eltype().isa<AShare>(), "expect AShare, got {}",
+    YACL_ENFORCE(in.eltype().isa<AShare>(), "expect AShare, got {}",
                  in.eltype());
     return in;
   }
@@ -41,8 +196,8 @@ ArrayRef _Lazy2A(Object* obj, const ArrayRef& in) {
 
 #define _LAZY_AB ctx->caller()->getState<ABProtState>()->lazy_ab
 
-#define _2A(x) _Lazy2A(ctx->caller(), x)
-#define _2B(x) _Lazy2B(ctx->caller(), x)
+#define _2A(x) _Lazy2A(ctx, x)
+#define _2B(x) _Lazy2B(ctx, x)
 
 #define _IsA(x) x.eltype().isa<AShare>()
 #define _IsB(x) x.eltype().isa<BShare>()
@@ -55,33 +210,45 @@ ArrayRef _Lazy2A(Object* obj, const ArrayRef& in) {
 #define _AddAP(lhs, rhs) ctx->caller()->call("add_ap", lhs, rhs)
 #define _AddAA(lhs, rhs) ctx->caller()->call("add_aa", lhs, rhs)
 #define _MulAP(lhs, rhs) ctx->caller()->call("mul_ap", lhs, rhs)
-#define _MulAA(lhs, rhs) ctx->caller()->call("mul_aa", lhs, rhs)
+#define _MulAA(lhs, rhs) block_par_binary(ctx, "mul_aa", lhs, rhs)
 #define _HasMulA1B() ctx->caller()->hasKernel("mul_a1b")
 #define _MulA1B(lhs, rhs) ctx->caller()->call("mul_a1b", lhs, rhs)
 #define _LShiftA(in, bits) ctx->caller()->call("lshift_a", in, bits)
-#define _TruncPrA(in, bits) ctx->caller()->call("truncpr_a", in, bits)
+#define _TruncPrA(in, bits) \
+  block_par_unary_with_size(ctx, "truncpr_a", in, bits)
 #define _MatMulAP(A, B, M, N, K) ctx->caller()->call("mmul_ap", A, B, M, N, K)
 #define _MatMulAA(A, B, M, N, K) ctx->caller()->call("mmul_aa", A, B, M, N, K)
 #define _B2P(x) ctx->caller()->call("b2p", x)
 #define _P2B(x) ctx->caller()->call("p2b", x)
-#define _A2B(x) ctx->caller()->call("a2b", x)
-#define _B2A(x) ctx->caller()->call("b2a", x)
+#define _A2B(x) block_par_unary(ctx, "a2b", x)
+#define _B2A(x) block_par_unary(ctx, "b2a", x)
 #define _NotB(x) ctx->caller()->call("not_b", x)
 #define _AndBP(lhs, rhs) ctx->caller()->call("and_bp", lhs, rhs)
-#define _AndBB(lhs, rhs) ctx->caller()->call("and_bb", lhs, rhs)
+#define _AndBB(lhs, rhs) block_par_binary(ctx, "and_bb", lhs, rhs)
 #define _XorBP(lhs, rhs) ctx->caller()->call("xor_bp", lhs, rhs)
 #define _XorBB(lhs, rhs) ctx->caller()->call("xor_bb", lhs, rhs)
 #define _LShiftB(in, bits) ctx->caller()->call("lshift_b", in, bits)
 #define _RShiftB(in, bits) ctx->caller()->call("rshift_b", in, bits)
 #define _ARShiftB(in, bits) ctx->caller()->call("arshift_b", in, bits)
 #define _RitrevB(in, start, end) ctx->caller()->call("bitrev_b", in, start, end)
-#define _MsbA(in) ctx->caller()->call("msb_a", in)
+#define _MsbA(in) block_par_unary(ctx, "msb_a", in)
+#define _RandA(size) ctx->caller()->call("rand_a", size)
+#define _RandB(size) ctx->caller()->call("rand_b", size)
 
 class ABProtState : public State {
  public:
   static constexpr char kBindName[] = "ABProtState";
 
   bool lazy_ab = true;
+
+  ABProtState() = default;
+  explicit ABProtState(bool lazy) : lazy_ab(lazy) {}
+
+  bool hasLowCostFork() const override { return true; }
+
+  std::unique_ptr<State> fork() override {
+    return std::make_unique<ABProtState>(lazy_ab);
+  }
 };
 
 class ABProtCommonTypeS : public Kernel {
@@ -94,10 +261,10 @@ class ABProtCommonTypeS : public Kernel {
     const Type& lhs = ctx->getParam<Type>(0);
     const Type& rhs = ctx->getParam<Type>(1);
 
-    SPU_TRACE_KERNEL(ctx, lhs, rhs);
+    SPU_TRACE_MPC_DISP(ctx, lhs, rhs);
 
     if (lhs.isa<AShare>() && rhs.isa<AShare>()) {
-      YASL_ENFORCE(lhs == rhs, "expect same, got lhs={}, rhs={}", lhs, rhs);
+      YACL_ENFORCE(lhs == rhs, "expect same, got lhs={}, rhs={}", lhs, rhs);
       ctx->setOutput(lhs);
     } else if (lhs.isa<AShare>() && rhs.isa<BShare>()) {
       ctx->setOutput(lhs);
@@ -106,7 +273,7 @@ class ABProtCommonTypeS : public Kernel {
     } else if (lhs.isa<BShare>() && rhs.isa<BShare>()) {
       ctx->setOutput(common_type_b(ctx->caller(), lhs, rhs));
     } else {
-      YASL_THROW("should not be here, lhs={}, rhs={}", lhs, rhs);
+      YACL_THROW("should not be here, lhs={}, rhs={}", lhs, rhs);
     }
   }
 };
@@ -121,10 +288,10 @@ class ABProtCastTypeS : public Kernel {
     const auto& frm = ctx->getParam<ArrayRef>(0);
     const auto& to_type = ctx->getParam<Type>(1);
 
-    SPU_TRACE_KERNEL(ctx, frm, to_type);
+    SPU_TRACE_MPC_DISP(ctx, frm, to_type);
 
     if (frm.eltype().isa<AShare>() && to_type.isa<AShare>()) {
-      YASL_ENFORCE(frm.eltype() == to_type,
+      YACL_ENFORCE(frm.eltype() == to_type,
                    "expect same, got frm={}, to_type={}", frm, to_type);
       // do nothing.
       ctx->setOutput(frm);
@@ -135,7 +302,7 @@ class ABProtCastTypeS : public Kernel {
     } else if (frm.eltype().isa<BShare>() && to_type.isa<BShare>()) {
       ctx->setOutput(cast_type_b(ctx->caller(), frm, to_type));
     } else {
-      YASL_THROW("should not be here, frm={}, to_type={}", frm, to_type);
+      YACL_THROW("should not be here, frm={}, to_type={}", frm, to_type);
     }
   }
 };
@@ -147,7 +314,7 @@ class ABProtP2S : public UnaryKernel {
   Kind kind() const override { return Kind::kDynamic; }
 
   ArrayRef proc(KernelEvalContext* ctx, const ArrayRef& in) const override {
-    SPU_TRACE_KERNEL(ctx, in);
+    SPU_TRACE_MPC_DISP(ctx, in);
     return _P2A(in);
   }
 };
@@ -159,13 +326,30 @@ class ABProtS2P : public UnaryKernel {
   Kind kind() const override { return Kind::kDynamic; }
 
   ArrayRef proc(KernelEvalContext* ctx, const ArrayRef& in) const override {
-    SPU_TRACE_KERNEL(ctx, in);
+    SPU_TRACE_MPC_DISP(ctx, in);
     if (_IsA(in)) {
       return _A2P(in);
     } else {
-      YASL_ENFORCE(_IsB(in));
+      YACL_ENFORCE(_IsB(in));
       return _B2P(in);
     }
+  }
+};
+
+class ABProtRandS : public Kernel {
+ public:
+  static constexpr char kBindName[] = "rand_s";
+
+  Kind kind() const override { return Kind::kDynamic; }
+
+  void evaluate(EvalContext* ctx) const override {
+    const size_t size = ctx->getParam<size_t>(0);
+
+    // ArrayRef proc(KernelEvalContext* ctx, size_t size) const override {
+    SPU_TRACE_MPC_DISP(ctx, size);
+
+    // always return random a share
+    ctx->setOutput(_RandA(size));
   }
 };
 
@@ -176,13 +360,13 @@ class ABProtNotS : public UnaryKernel {
   Kind kind() const override { return Kind::kDynamic; }
 
   ArrayRef proc(KernelEvalContext* ctx, const ArrayRef& in) const override {
-    SPU_TRACE_KERNEL(ctx, in);
+    SPU_TRACE_MPC_DISP(ctx, in);
     if (_LAZY_AB) {
       // TODO: Both A&B could handle not(invert).
       // if (in.eltype().isa<BShare>()) {
       //  return _NotB(in);
       //} else {
-      //  YASL_ENFORCE(in.eltype().isa<AShare>());
+      //  YACL_ENFORCE(in.eltype().isa<AShare>());
       //  return _NotA(in);
       //}
       return _NotA(_2A(in));
@@ -199,7 +383,7 @@ class ABProtAddSP : public BinaryKernel {
 
   ArrayRef proc(KernelEvalContext* ctx, const ArrayRef& lhs,
                 const ArrayRef& rhs) const override {
-    SPU_TRACE_KERNEL(ctx, lhs, rhs);
+    SPU_TRACE_MPC_DISP(ctx, lhs, rhs);
     if (_LAZY_AB) {
       return _AddAP(_2A(lhs), rhs);
     }
@@ -215,7 +399,7 @@ class ABProtAddSS : public BinaryKernel {
 
   ArrayRef proc(KernelEvalContext* ctx, const ArrayRef& lhs,
                 const ArrayRef& rhs) const override {
-    SPU_TRACE_KERNEL(ctx, lhs, rhs);
+    SPU_TRACE_MPC_DISP(ctx, lhs, rhs);
     if (_LAZY_AB) {
       return _AddAA(_2A(lhs), _2A(rhs));
     }
@@ -231,7 +415,7 @@ class ABProtMulSP : public BinaryKernel {
 
   ArrayRef proc(KernelEvalContext* ctx, const ArrayRef& lhs,
                 const ArrayRef& rhs) const override {
-    SPU_TRACE_KERNEL(ctx, lhs, rhs);
+    SPU_TRACE_MPC_DISP(ctx, lhs, rhs);
     if (_LAZY_AB) {
       return _MulAP(_2A(lhs), rhs);
     }
@@ -247,7 +431,7 @@ class ABProtMulSS : public BinaryKernel {
 
   ArrayRef proc(KernelEvalContext* ctx, const ArrayRef& lhs,
                 const ArrayRef& rhs) const override {
-    SPU_TRACE_KERNEL(ctx, lhs, rhs);
+    SPU_TRACE_MPC_DISP(ctx, lhs, rhs);
     if (_HasMulA1B() && _IsA(rhs) && _IsB(lhs) && _NBits(lhs) == 1) {
       return _MulA1B(rhs, lhs);
     }
@@ -270,7 +454,7 @@ class ABProtMatMulSP : public MatmulKernel {
 
   ArrayRef proc(KernelEvalContext* ctx, const ArrayRef& A, const ArrayRef& B,
                 size_t M, size_t N, size_t K) const override {
-    SPU_TRACE_KERNEL(ctx, A, B);
+    SPU_TRACE_MPC_DISP(ctx, A, B);
     if (_LAZY_AB) {
       return _MatMulAP(_2A(A), B, M, N, K);
     }
@@ -286,7 +470,7 @@ class ABProtMatMulSS : public MatmulKernel {
 
   ArrayRef proc(KernelEvalContext* ctx, const ArrayRef& A, const ArrayRef& B,
                 size_t M, size_t N, size_t K) const override {
-    SPU_TRACE_KERNEL(ctx, A, B);
+    SPU_TRACE_MPC_DISP(ctx, A, B);
     if (_LAZY_AB) {
       return _MatMulAA(_2A(A), _2A(B), M, N, K);
     }
@@ -302,7 +486,7 @@ class ABProtAndSP : public BinaryKernel {
 
   ArrayRef proc(KernelEvalContext* ctx, const ArrayRef& lhs,
                 const ArrayRef& rhs) const override {
-    SPU_TRACE_KERNEL(ctx, lhs, rhs);
+    SPU_TRACE_MPC_DISP(ctx, lhs, rhs);
     if (_LAZY_AB) {
       return _AndBP(_2B(lhs), rhs);
     }
@@ -318,7 +502,7 @@ class ABProtAndSS : public BinaryKernel {
 
   ArrayRef proc(KernelEvalContext* ctx, const ArrayRef& lhs,
                 const ArrayRef& rhs) const override {
-    SPU_TRACE_KERNEL(ctx, lhs, rhs);
+    SPU_TRACE_MPC_DISP(ctx, lhs, rhs);
     if (_LAZY_AB) {
       return _AndBB(_2B(lhs), _2B(rhs));
     }
@@ -334,7 +518,7 @@ class ABProtXorSP : public BinaryKernel {
 
   ArrayRef proc(KernelEvalContext* ctx, const ArrayRef& lhs,
                 const ArrayRef& rhs) const override {
-    SPU_TRACE_KERNEL(ctx, lhs, rhs);
+    SPU_TRACE_MPC_DISP(ctx, lhs, rhs);
     if (_LAZY_AB) {
       return _XorBP(_2B(lhs), rhs);
     }
@@ -350,7 +534,7 @@ class ABProtXorSS : public BinaryKernel {
 
   ArrayRef proc(KernelEvalContext* ctx, const ArrayRef& lhs,
                 const ArrayRef& rhs) const override {
-    SPU_TRACE_KERNEL(ctx, lhs, rhs);
+    SPU_TRACE_MPC_DISP(ctx, lhs, rhs);
     if (_LAZY_AB) {
       return _XorBB(_2B(lhs), _2B(rhs));
     }
@@ -365,9 +549,9 @@ class ABProtEqzS : public UnaryKernel {
   Kind kind() const override { return Kind::kDynamic; }
 
   ArrayRef proc(KernelEvalContext* ctx, const ArrayRef& in) const override {
-    SPU_TRACE_KERNEL(ctx, in);
+    SPU_TRACE_MPC_DISP(ctx, in);
     //
-    YASL_THROW("TODO");
+    YACL_THROW("TODO");
   }
 };
 
@@ -379,7 +563,7 @@ class ABProtLShiftS : public ShiftKernel {
 
   ArrayRef proc(KernelEvalContext* ctx, const ArrayRef& in,
                 size_t bits) const override {
-    SPU_TRACE_KERNEL(ctx, in, bits);
+    SPU_TRACE_MPC_DISP(ctx, in, bits);
     if (in.eltype().isa<AShare>()) {
       return _LShiftA(in, bits);
     } else if (in.eltype().isa<BShare>()) {
@@ -389,7 +573,7 @@ class ABProtLShiftS : public ShiftKernel {
         return _B2A(_LShiftB(in, bits));
       }
     } else {
-      YASL_THROW("Unsupported type {}", in.eltype());
+      YACL_THROW("Unsupported type {}", in.eltype());
     }
   }
 };
@@ -402,7 +586,7 @@ class ABProtRShiftS : public ShiftKernel {
 
   ArrayRef proc(KernelEvalContext* ctx, const ArrayRef& in,
                 size_t bits) const override {
-    SPU_TRACE_KERNEL(ctx, in, bits);
+    SPU_TRACE_MPC_DISP(ctx, in, bits);
     if (_LAZY_AB) {
       return _RShiftB(_2B(in), bits);
     }
@@ -418,7 +602,7 @@ class ABProtARShiftS : public ShiftKernel {
 
   ArrayRef proc(KernelEvalContext* ctx, const ArrayRef& in,
                 size_t bits) const override {
-    SPU_TRACE_KERNEL(ctx, in, bits);
+    SPU_TRACE_MPC_DISP(ctx, in, bits);
     if (_LAZY_AB) {
       return _ARShiftB(_2B(in), bits);
     }
@@ -434,7 +618,7 @@ class ABProtTruncPrS : public ShiftKernel {
 
   ArrayRef proc(KernelEvalContext* ctx, const ArrayRef& in,
                 size_t bits) const override {
-    SPU_TRACE_KERNEL(ctx, in, bits);
+    SPU_TRACE_MPC_DISP(ctx, in, bits);
     if (_LAZY_AB) {
       return _TruncPrA(_2A(in), bits);
     }
@@ -454,7 +638,7 @@ class ABProtBitrevS : public Kernel {
   }
   ArrayRef proc(KernelEvalContext* ctx, const ArrayRef& in, size_t start,
                 size_t end) const {
-    SPU_TRACE_KERNEL(ctx, in, start, end);
+    SPU_TRACE_MPC_DISP(ctx, in, start, end);
     if (_LAZY_AB) {
       return _RitrevB(_2B(in), start, end);
     }
@@ -469,7 +653,7 @@ class ABProtMsbS : public UnaryKernel {
   Kind kind() const override { return Kind::kDynamic; }
 
   ArrayRef proc(KernelEvalContext* ctx, const ArrayRef& in) const override {
-    SPU_TRACE_KERNEL(ctx, in);
+    SPU_TRACE_MPC_DISP(ctx, in);
     const auto field = in.eltype().as<Ring2k>()->field();
     if (ctx->caller()->hasKernel("msb_a")) {
       if (_LAZY_AB) {
@@ -506,6 +690,14 @@ ArrayRef cast_type_b(Object* ctx, const ArrayRef& a, const Type& to_type) {
 
 ArrayRef zero_a(Object* ctx, FieldType field, size_t sz) {
   return ctx->call("zero_a", field, sz);
+}
+
+ArrayRef rand_a(Object* ctx, FieldType field, size_t sz) {
+  return ctx->call("rand_a", field, sz);
+}
+
+ArrayRef rand_b(Object* ctx, FieldType field, size_t sz) {
+  return ctx->call("rand_b", field, sz);
 }
 
 SPU_MPC_DEF_UNARY_OP(a2p)
@@ -547,6 +739,7 @@ void regABKernels(Object* obj) {
   obj->regKernel<ABProtCastTypeS>();
   obj->regKernel<ABProtP2S>();
   obj->regKernel<ABProtS2P>();
+  obj->regKernel<ABProtRandS>();
   obj->regKernel<ABProtNotS>();
   obj->regKernel<ABProtAddSP>();
   obj->regKernel<ABProtAddSS>();
@@ -578,7 +771,7 @@ void regABKernels(Object* obj) {
   } else if (_IsB(x) && _IsB(y)) {                 \
     return FnBB(ctx, y, x);                        \
   } else {                                         \
-    YASL_THROW("unsupported op x={}, y={}", x, y); \
+    YACL_THROW("unsupported op x={}, y={}", x, y); \
   }
 
 CircuitBasicBlock<ArrayRef> makeABProtBasicBlock(Object* ctx) {
@@ -595,7 +788,7 @@ CircuitBasicBlock<ArrayRef> makeABProtBasicBlock(Object* ctx) {
     } else if (_IsB(x)) {
       return lshift_b(ctx, x, bits);
     }
-    YASL_THROW("unsupported op x={}", x);
+    YACL_THROW("unsupported op x={}", x);
   };
   cbb.rshift = [=](ArrayRef const& x, size_t bits) -> ArrayRef {
     if (_IsP(x)) {
@@ -603,7 +796,7 @@ CircuitBasicBlock<ArrayRef> makeABProtBasicBlock(Object* ctx) {
     } else if (_IsB(x)) {
       return rshift_b(ctx, x, bits);
     }
-    YASL_THROW("unsupported op x={}", x);
+    YACL_THROW("unsupported op x={}", x);
   };
   cbb.init_like = [=](ArrayRef const& x, uint64_t hi, uint64_t lo) {
     // TODO: use single element + stride.
@@ -615,7 +808,7 @@ CircuitBasicBlock<ArrayRef> makeABProtBasicBlock(Object* ctx) {
       U* ptr = &ret.at<U>(0);
       for (int64_t idx = 0; idx < x.numel(); idx++) {
         if constexpr (sizeof(U) * 8 == 128) {
-          ptr[idx] = yasl::MakeUint128(hi, lo);
+          ptr[idx] = yacl::MakeUint128(hi, lo);
         } else {
           ptr[idx] = static_cast<U>(lo);
         }
@@ -625,7 +818,7 @@ CircuitBasicBlock<ArrayRef> makeABProtBasicBlock(Object* ctx) {
     return ret;
   };
   cbb.set_nbits = [=](ArrayRef& x, size_t nbits) {
-    YASL_ENFORCE(x.eltype().isa<BShare>());
+    YACL_ENFORCE(x.eltype().isa<BShare>());
     x.eltype().as<BShare>()->setNbits(nbits);
   };
   return cbb;

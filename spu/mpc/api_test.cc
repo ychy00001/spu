@@ -36,12 +36,12 @@ const std::vector<size_t> kShiftBits = {0, 1, 2, 31, 32, 33, 64, 1000};
     const RuntimeConfig& conf = std::get<1>(GetParam());                     \
     const size_t npc = std::get<2>(GetParam());                              \
                                                                              \
-    util::simulate(npc, [&](std::shared_ptr<yasl::link::Context> lctx) {     \
+    util::simulate(npc, [&](std::shared_ptr<yacl::link::Context> lctx) {     \
       auto obj = factory(conf, lctx);                                        \
                                                                              \
       /* GIVEN */                                                            \
-      auto p0 = rand_p(obj.get(), conf.field(), kNumel);                     \
-      auto p1 = rand_p(obj.get(), conf.field(), kNumel);                     \
+      auto p0 = rand_p(obj.get(), kNumel);                                   \
+      auto p1 = rand_p(obj.get(), kNumel);                                   \
                                                                              \
       /* WHEN */                                                             \
       auto tmp = OP##_ss(obj.get(), p2s(obj.get(), p0), p2s(obj.get(), p1)); \
@@ -59,12 +59,12 @@ const std::vector<size_t> kShiftBits = {0, 1, 2, 31, 32, 33, 64, 1000};
     const RuntimeConfig& conf = std::get<1>(GetParam());                 \
     const size_t npc = std::get<2>(GetParam());                          \
                                                                          \
-    util::simulate(npc, [&](std::shared_ptr<yasl::link::Context> lctx) { \
+    util::simulate(npc, [&](std::shared_ptr<yacl::link::Context> lctx) { \
       auto obj = factory(conf, lctx);                                    \
                                                                          \
       /* GIVEN */                                                        \
-      auto p0 = rand_p(obj.get(), conf.field(), kNumel);                 \
-      auto p1 = rand_p(obj.get(), conf.field(), kNumel);                 \
+      auto p0 = rand_p(obj.get(), kNumel);                               \
+      auto p1 = rand_p(obj.get(), kNumel);                               \
                                                                          \
       /* WHEN */                                                         \
       auto tmp = OP##_sp(obj.get(), p2s(obj.get(), p0), p1);             \
@@ -91,11 +91,11 @@ TEST_BINARY_OP(xor)
     const RuntimeConfig& conf = std::get<1>(GetParam());                 \
     const size_t npc = std::get<2>(GetParam());                          \
                                                                          \
-    util::simulate(npc, [&](std::shared_ptr<yasl::link::Context> lctx) { \
+    util::simulate(npc, [&](std::shared_ptr<yacl::link::Context> lctx) { \
       auto obj = factory(conf, lctx);                                    \
                                                                          \
       /* GIVEN */                                                        \
-      auto p0 = rand_p(obj.get(), conf.field(), kNumel);                 \
+      auto p0 = rand_p(obj.get(), kNumel);                               \
                                                                          \
       /* WHEN */                                                         \
       auto r_s = s2p(obj.get(), OP##_s(obj.get(), p2s(obj.get(), p0)));  \
@@ -112,11 +112,11 @@ TEST_BINARY_OP(xor)
     const RuntimeConfig& conf = std::get<1>(GetParam());                 \
     const size_t npc = std::get<2>(GetParam());                          \
                                                                          \
-    util::simulate(npc, [&](std::shared_ptr<yasl::link::Context> lctx) { \
+    util::simulate(npc, [&](std::shared_ptr<yacl::link::Context> lctx) { \
       auto obj = factory(conf, lctx);                                    \
                                                                          \
       /* GIVEN */                                                        \
-      auto p0 = rand_p(obj.get(), conf.field(), kNumel);                 \
+      auto p0 = rand_p(obj.get(), kNumel);                               \
                                                                          \
       /* WHEN */                                                         \
       auto r_p = OP##_p(obj.get(), p0);                                  \
@@ -140,11 +140,11 @@ TEST_UNARY_OP(msb)
     const RuntimeConfig& conf = std::get<1>(GetParam());                 \
     const size_t npc = std::get<2>(GetParam());                          \
                                                                          \
-    util::simulate(npc, [&](std::shared_ptr<yasl::link::Context> lctx) { \
+    util::simulate(npc, [&](std::shared_ptr<yacl::link::Context> lctx) { \
       auto obj = factory(conf, lctx);                                    \
                                                                          \
       /* GIVEN */                                                        \
-      auto p0 = rand_p(obj.get(), conf.field(), kNumel);                 \
+      auto p0 = rand_p(obj.get(), kNumel);                               \
                                                                          \
       for (auto bits : kShiftBits) {                                     \
         if (bits >= SizeOf(conf.field()) * 8) {                          \
@@ -167,11 +167,11 @@ TEST_UNARY_OP(msb)
     const RuntimeConfig& conf = std::get<1>(GetParam());                 \
     const size_t npc = std::get<2>(GetParam());                          \
                                                                          \
-    util::simulate(npc, [&](std::shared_ptr<yasl::link::Context> lctx) { \
+    util::simulate(npc, [&](std::shared_ptr<yacl::link::Context> lctx) { \
       auto obj = factory(conf, lctx);                                    \
                                                                          \
       /* GIVEN */                                                        \
-      auto p0 = rand_p(obj.get(), conf.field(), kNumel);                 \
+      auto p0 = rand_p(obj.get(), kNumel);                               \
                                                                          \
       for (auto bits : kShiftBits) { /* WHEN */                          \
         if (bits >= SizeOf(conf.field()) * 8) {                          \
@@ -201,7 +201,7 @@ TEST_P(ApiTest, TruncPrS) {
 
   // trunc_pr only work for smalle range.
   auto p0 = ring_rand_range(conf.field(), kNumel, 0, 10000);
-  util::simulate(npc, [&](std::shared_ptr<yasl::link::Context> lctx) {
+  util::simulate(npc, [&](std::shared_ptr<yacl::link::Context> lctx) {
     auto obj = factory(conf, lctx);
 
     const size_t bits = 2;
@@ -224,12 +224,12 @@ TEST_P(ApiTest, MatMulSS) {
   const std::vector<int64_t> shape_A{M, K};
   const std::vector<int64_t> shape_B{K, N};
 
-  util::simulate(npc, [&](std::shared_ptr<yasl::link::Context> lctx) {
+  util::simulate(npc, [&](std::shared_ptr<yacl::link::Context> lctx) {
     auto obj = factory(conf, lctx);
 
     /* GIVEN */
-    auto p0 = rand_p(obj.get(), conf.field(), calcNumel(shape_A));
-    auto p1 = rand_p(obj.get(), conf.field(), calcNumel(shape_B));
+    auto p0 = rand_p(obj.get(), calcNumel(shape_A));
+    auto p1 = rand_p(obj.get(), calcNumel(shape_B));
 
     /* WHEN */
     auto tmp =
@@ -253,12 +253,12 @@ TEST_P(ApiTest, MmulSP) {
   const std::vector<int64_t> shape_A{M, K};
   const std::vector<int64_t> shape_B{K, N};
 
-  util::simulate(npc, [&](std::shared_ptr<yasl::link::Context> lctx) {
+  util::simulate(npc, [&](std::shared_ptr<yacl::link::Context> lctx) {
     auto obj = factory(conf, lctx);
 
     /* GIVEN */
-    auto p0 = rand_p(obj.get(), conf.field(), calcNumel(shape_A));
-    auto p1 = rand_p(obj.get(), conf.field(), calcNumel(shape_B));
+    auto p0 = rand_p(obj.get(), calcNumel(shape_A));
+    auto p1 = rand_p(obj.get(), calcNumel(shape_B));
 
     /* WHEN */
     auto tmp = mmul_sp(obj.get(), p2s(obj.get(), p0), p1, M, N, K);
@@ -275,11 +275,11 @@ TEST_P(ApiTest, P2S_S2P) {
   const RuntimeConfig& conf = std::get<1>(GetParam());
   const size_t npc = std::get<2>(GetParam());
 
-  util::simulate(npc, [&](std::shared_ptr<yasl::link::Context> lctx) {
+  util::simulate(npc, [&](std::shared_ptr<yacl::link::Context> lctx) {
     auto obj = factory(conf, lctx);
 
     /* GIVEN */
-    auto p0 = rand_p(obj.get(), conf.field(), kNumel);
+    auto p0 = rand_p(obj.get(), kNumel);
 
     /* WHEN */
     auto s = p2s(obj.get(), p0);

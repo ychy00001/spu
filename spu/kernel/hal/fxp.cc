@@ -16,6 +16,7 @@
 
 #include <algorithm>
 #include <cmath>
+#include <future>
 
 #include "absl/numeric/bits.h"
 
@@ -34,9 +35,9 @@ namespace {
 // with the highest order term. (Constant is not included).
 Value f_polynomial(HalContext* ctx, const Value& x,
                    const std::vector<Value>& coeffs) {
-  SPU_TRACE_HAL(ctx, x);
-  YASL_ENFORCE(x.isFxp());
-  YASL_ENFORCE(!coeffs.empty());
+  SPU_TRACE_HAL_DISP(ctx, x);
+  YACL_ENFORCE(x.isFxp());
+  YACL_ENFORCE(!coeffs.empty());
 
   Value x_pow = x;
   Value res = _mul(ctx, x_pow, coeffs[0]);
@@ -97,7 +98,7 @@ namespace detail {
 //
 // Precision is decided by magic number, i.e 2.9142 and f.
 Value div_goldschmidt(HalContext* ctx, const Value& a, const Value& b) {
-  SPU_TRACE_HAL(ctx, a, b);
+  SPU_TRACE_HAL_DISP(ctx, a, b);
 
   auto b_sign = _sign(ctx, b);
   auto b_abs = _mul(ctx, b_sign, b).asFxp();
@@ -174,7 +175,7 @@ Value reciprocal_goldschmidt_positive(HalContext* ctx, const Value& b_abs) {
 // NOTE(junfeng): we have a seperate reciprocal_goldschmidt is to avoid
 // unnecessary f_mul for y initiation in div_goldschmidt.
 Value reciprocal_goldschmidt(HalContext* ctx, const Value& b) {
-  SPU_TRACE_HAL(ctx, b);
+  SPU_TRACE_HAL_DISP(ctx, b);
 
   auto b_sign = _sign(ctx, b);
   auto b_abs = _mul(ctx, b_sign, b).asFxp();
@@ -226,7 +227,7 @@ Value log2_pade_approx_for_normalized(HalContext* ctx, const Value& x) {
 // Benchmarking Privacy Preserving Scientific Operations
 // https://www.esat.kuleuven.be/cosic/publications/article-3013.pdf
 Value log2_pade_approx(HalContext* ctx, const Value& x) {
-  SPU_TRACE_HAL(ctx, x);
+  SPU_TRACE_HAL_DISP(ctx, x);
 
   auto k = _popcount(ctx, _prefix_or(ctx, x));
 
@@ -409,20 +410,18 @@ Value tanh_pade_approx(HalContext* ctx, const Value& x) {
 }  // namespace detail
 
 Value f_square(HalContext* ctx, const Value& x) {
-  SPU_TRACE_HAL(ctx, x);
-  SPU_PROFILE_END_OP(ctx, x);
+  SPU_TRACE_HAL_LEAF(ctx, x);
 
-  YASL_ENFORCE(x.isFxp());
+  YACL_ENFORCE(x.isFxp());
   // TODO(jint) optimize me.
 
   return f_mul(ctx, x, x);
 }
 
 Value f_exp(HalContext* ctx, const Value& x) {
-  SPU_TRACE_HAL(ctx, x);
-  SPU_PROFILE_END_OP(ctx, x);
+  SPU_TRACE_HAL_LEAF(ctx, x);
 
-  YASL_ENFORCE(x.isFxp());
+  YACL_ENFORCE(x.isFxp());
 
   if (x.isPublic()) {
     return f_exp_p(ctx, x);
@@ -435,34 +434,31 @@ Value f_exp(HalContext* ctx, const Value& x) {
     case RuntimeConfig::EXP_PADE:
       return detail::exp_pade_approx(ctx, x);
     default:
-      YASL_THROW("unexpected exp approxmation method {}",
+      YACL_THROW("unexpected exp approxmation method {}",
                  ctx->rt_config().fxp_exp_mode());
   }
 }
 
 Value f_negate(HalContext* ctx, const Value& x) {
-  SPU_TRACE_HAL(ctx, x);
-  SPU_PROFILE_END_OP(ctx, x);
+  SPU_TRACE_HAL_LEAF(ctx, x);
 
-  YASL_ENFORCE(x.isFxp());
+  YACL_ENFORCE(x.isFxp());
   return _negate(ctx, x).asFxp();
 }
 
 Value f_abs(HalContext* ctx, const Value& x) {
-  SPU_TRACE_HAL(ctx, x);
-  SPU_PROFILE_END_OP(ctx, x);
+  SPU_TRACE_HAL_LEAF(ctx, x);
 
-  YASL_ENFORCE(x.isFxp());
+  YACL_ENFORCE(x.isFxp());
   const Value sign = _sign(ctx, x);
 
   return _mul(ctx, sign, x).asFxp();
 }
 
 Value f_reciprocal(HalContext* ctx, const Value& x) {
-  SPU_TRACE_HAL(ctx, x);
-  SPU_PROFILE_END_OP(ctx, x);
+  SPU_TRACE_HAL_LEAF(ctx, x);
 
-  YASL_ENFORCE(x.isFxp());
+  YACL_ENFORCE(x.isFxp());
   if (x.isPublic()) {
     return f_reciprocal_p(ctx, x);
   }
@@ -471,50 +467,45 @@ Value f_reciprocal(HalContext* ctx, const Value& x) {
 }
 
 Value f_add(HalContext* ctx, const Value& x, const Value& y) {
-  SPU_TRACE_HAL(ctx, x, y);
-  SPU_PROFILE_END_OP(ctx, x, y);
+  SPU_TRACE_HAL_LEAF(ctx, x, y);
 
-  YASL_ENFORCE(x.isFxp());
-  YASL_ENFORCE(y.isFxp());
+  YACL_ENFORCE(x.isFxp());
+  YACL_ENFORCE(y.isFxp());
 
   return _add(ctx, x, y).asFxp();
 }
 
 Value f_sub(HalContext* ctx, const Value& x, const Value& y) {
-  SPU_TRACE_HAL(ctx, x, y);
-  SPU_PROFILE_END_OP(ctx, x, y);
+  SPU_TRACE_HAL_LEAF(ctx, x, y);
 
-  YASL_ENFORCE(x.isFxp());
-  YASL_ENFORCE(y.isFxp());
+  YACL_ENFORCE(x.isFxp());
+  YACL_ENFORCE(y.isFxp());
   return f_add(ctx, x, f_negate(ctx, y));
 }
 
 Value f_mul(HalContext* ctx, const Value& x, const Value& y) {
-  SPU_TRACE_HAL(ctx, x, y);
-  SPU_PROFILE_END_OP(ctx, x, y);
+  SPU_TRACE_HAL_LEAF(ctx, x, y);
 
-  YASL_ENFORCE(x.isFxp());
-  YASL_ENFORCE(y.isFxp());
+  YACL_ENFORCE(x.isFxp());
+  YACL_ENFORCE(y.isFxp());
 
   return _trunc(ctx, _mul(ctx, x, y)).asFxp();
 }
 
 Value f_mmul(HalContext* ctx, const Value& x, const Value& y) {
-  SPU_TRACE_HAL(ctx, x, y);
-  SPU_PROFILE_END_OP(ctx, x, y);
+  SPU_TRACE_HAL_LEAF(ctx, x, y);
 
-  YASL_ENFORCE(x.isFxp());
-  YASL_ENFORCE(y.isFxp());
+  YACL_ENFORCE(x.isFxp());
+  YACL_ENFORCE(y.isFxp());
 
   return _trunc(ctx, _mmul(ctx, x, y)).asFxp();
 }
 
 Value f_div(HalContext* ctx, const Value& x, const Value& y) {
-  SPU_TRACE_HAL(ctx, x, y);
-  SPU_PROFILE_END_OP(ctx, x, y);
+  SPU_TRACE_HAL_LEAF(ctx, x, y);
 
-  YASL_ENFORCE(x.isFxp());
-  YASL_ENFORCE(y.isFxp());
+  YACL_ENFORCE(x.isFxp());
+  YACL_ENFORCE(y.isFxp());
 
   if (x.isPublic() && y.isPublic()) {
     return f_div_p(ctx, x, y);
@@ -524,30 +515,27 @@ Value f_div(HalContext* ctx, const Value& x, const Value& y) {
 }
 
 Value f_equal(HalContext* ctx, const Value& x, const Value& y) {
-  SPU_TRACE_HAL(ctx, x, y);
-  SPU_PROFILE_END_OP(ctx, x, y);
+  SPU_TRACE_HAL_LEAF(ctx, x, y);
 
-  YASL_ENFORCE(x.isFxp());
-  YASL_ENFORCE(y.isFxp());
+  YACL_ENFORCE(x.isFxp());
+  YACL_ENFORCE(y.isFxp());
 
   return _eqz(ctx, f_sub(ctx, x, y)).setDtype(DT_I1);
 }
 
 Value f_less(HalContext* ctx, const Value& x, const Value& y) {
-  SPU_TRACE_HAL(ctx, x, y);
-  SPU_PROFILE_END_OP(ctx, x, y);
+  SPU_TRACE_HAL_LEAF(ctx, x, y);
 
-  YASL_ENFORCE(x.isFxp());
-  YASL_ENFORCE(y.isFxp());
+  YACL_ENFORCE(x.isFxp());
+  YACL_ENFORCE(y.isFxp());
 
   return _less(ctx, x, y).setDtype(DT_I1);
 }
 
 Value f_log(HalContext* ctx, const Value& x) {
-  SPU_TRACE_HAL(ctx, x);
-  SPU_PROFILE_END_OP(ctx, x);
+  SPU_TRACE_HAL_LEAF(ctx, x);
 
-  YASL_ENFORCE(x.isFxp());
+  YACL_ENFORCE(x.isFxp());
 
   if (x.isPublic()) {
     return f_log_p(ctx, x);
@@ -561,35 +549,32 @@ Value f_log(HalContext* ctx, const Value& x) {
     case RuntimeConfig::LOG_NEWTON:
       return detail::log_householder_approx(ctx, x);
     default:
-      YASL_THROW("unlogected log approxmation method {}",
+      YACL_THROW("unlogected log approxmation method {}",
                  ctx->rt_config().fxp_log_mode());
   }
 }
 
 Value f_log1p(HalContext* ctx, const Value& x) {
-  SPU_TRACE_HAL(ctx, x);
-  SPU_PROFILE_END_OP(ctx, x);
+  SPU_TRACE_HAL_LEAF(ctx, x);
 
-  YASL_ENFORCE(x.isFxp());
+  YACL_ENFORCE(x.isFxp());
 
   return f_log(ctx, f_add(ctx, constant(ctx, 1.0f, x.shape()), x));
 }
 
 Value f_floor(HalContext* ctx, const Value& x) {
-  SPU_TRACE_HAL(ctx, x);
-  SPU_PROFILE_END_OP(ctx, x);
+  SPU_TRACE_HAL_LEAF(ctx, x);
 
-  YASL_ENFORCE(x.isFxp());
+  YACL_ENFORCE(x.isFxp());
 
   const size_t fbits = ctx->getFxpBits();
   return _lshift(ctx, _arshift(ctx, x, fbits), fbits).asFxp();
 }
 
 Value f_ceil(HalContext* ctx, const Value& x) {
-  SPU_TRACE_HAL(ctx, x);
-  SPU_PROFILE_END_OP(ctx, x);
+  SPU_TRACE_HAL_LEAF(ctx, x);
 
-  YASL_ENFORCE(x.isFxp());
+  YACL_ENFORCE(x.isFxp());
 
   // TODO: Add fxp::epsilon
   return f_floor(
@@ -600,24 +585,21 @@ Value f_ceil(HalContext* ctx, const Value& x) {
 }
 
 Value f_log2(HalContext* ctx, const Value& x) {
-  SPU_TRACE_HAL(ctx, x);
-  SPU_PROFILE_END_OP(ctx, x);
+  SPU_TRACE_HAL_LEAF(ctx, x);
 
-  YASL_ENFORCE(x.isFxp());
+  YACL_ENFORCE(x.isFxp());
 
   return detail::log2_pade_approx(ctx, x).asFxp();
 }
 
 Value f_exp2(HalContext* ctx, const Value& x) {
-  SPU_TRACE_HAL(ctx, x);
-  SPU_PROFILE_END_OP(ctx, x);
+  SPU_TRACE_HAL_LEAF(ctx, x);
 
   return detail::exp2_pade_approx(ctx, x);
 }
 
 Value f_tanh(HalContext* ctx, const Value& x) {
-  SPU_TRACE_HAL(ctx, x);
-  SPU_PROFILE_END_OP(ctx, x);
+  SPU_TRACE_HAL_LEAF(ctx, x);
 
   return detail::tanh_pade_approx(ctx, x);
 }
@@ -630,8 +612,7 @@ Value f_tanh(HalContext* ctx, const Value& x) {
 //  3. get the compensation for 2^(e + 1) part.
 //  4. multiple two parts and get the result.
 Value f_rsqrt(HalContext* ctx, const Value& x) {
-  SPU_TRACE_HAL(ctx, x);
-  SPU_PROFILE_END_OP(ctx, x);
+  SPU_TRACE_HAL_LEAF(ctx, x);
 
   const size_t k = SizeOf(ctx->getField()) * 8;
   const size_t f = ctx->getFxpBits();
@@ -646,20 +627,22 @@ Value f_rsqrt(HalContext* ctx, const Value& x) {
   hintNumberOfBits(z_rev, 2 * f);
   auto u = _trunc(ctx, _mul(ctx, x, z_rev)).asFxp();
 
-  // let rsqrt(u) = 4.7979 * u^2 - 5.9417 * u + 3.1855
-  std::vector<Value> coeffs = {constant(ctx, -5.9417, x.shape()),
-                               constant(ctx, 4.7979, x.shape())};
-  auto r = f_add(ctx, f_polynomial(ctx, u, coeffs),
-                 constant(ctx, 3.1855, x.shape()));
-
-  // Newton Method to reduce error
-  // r' = r * ( threehalfs - ( u * half * r * r ) );
-  const auto& k_threehalfs = constant(ctx, 1.5f, r.shape());
-  const auto& k_half = constant(ctx, 0.5f, r.shape());
-
-  r = f_mul(ctx, r,
-            f_sub(ctx, k_threehalfs,
-                  f_mul(ctx, f_mul(ctx, u, k_half), f_square(ctx, r))));
+  // let rsqrt(u) = 26.02942339 * u^4 - 49.86605845 * u^3 + 38.4714796 * u^2
+  // - 15.47994394 * u + 4.14285016
+  spu::Value r;
+  if (!ctx->rt_config().enable_lower_accuracy_rsqrt()) {
+    std::vector<Value> coeffs = {constant(ctx, -15.47994394, x.shape()),
+                                 constant(ctx, 38.4714796, x.shape()),
+                                 constant(ctx, -49.86605845, x.shape()),
+                                 constant(ctx, 26.02942339, x.shape())};
+    r = f_add(ctx, f_polynomial(ctx, u, coeffs),
+              constant(ctx, 4.14285016, x.shape()));
+  } else {
+    std::vector<Value> coeffs = {constant(ctx, -5.9417, x.shape()),
+                                 constant(ctx, 4.7979, x.shape())};
+    r = f_add(ctx, f_polynomial(ctx, u, coeffs),
+              constant(ctx, 3.1855, x.shape()));
+  }
 
   // let a = 2^((e+f)/2), that is a[i] = 1 for i = (e+f)/2 else 0
   // let b = lsb(e+f)
@@ -670,8 +653,8 @@ Value f_rsqrt(HalContext* ctx, const Value& x) {
     auto z_2i1 = _rshift(ctx, z, 2 * i + 1);
     // a[i] = z[2*i] ^ z[2*i+1]
     auto a_i = _and(ctx, _xor(ctx, z_2i, z_2i1), k1);
-    a = _xor(ctx, a, _lshift(ctx, a_i, i));
 
+    a = _xor(ctx, a, _lshift(ctx, a_i, i));
     // b ^= z[2*i]
     b = _xor(ctx, b, z_2i);
   }
@@ -714,8 +697,7 @@ Value f_rsqrt(HalContext* ctx, const Value& x) {
 // In the end, g is an approximation of sqrt(x) while h is an approximation of
 // 1 / (2 * sqrt(x)).
 Value f_sqrt(HalContext* ctx, const Value& x) {
-  SPU_TRACE_HAL(ctx, x);
-  SPU_PROFILE_END_OP(ctx, x);
+  SPU_TRACE_HAL_LEAF(ctx, x);
 
   const auto c0 = constant(ctx, 0.5, x.shape());
   const auto c1 = constant(ctx, 1.5, x.shape());

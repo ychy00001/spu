@@ -7,13 +7,27 @@
 > - Add `[API]` prefix for API changes
 
 ## staging
-> please add your unrelease change here.
+> please add your unreleased change here.
+- [API] Add get_var_meta
+- [API] Change ValueProto to bytes in Runtime/IO binding API
+- [Feature] Add SPU logging
+- [Feature] ECDH-PSI supports white box interconnection mode
+- [Feature] Various performance improvements
+- [Feature] Lift IfOp condition limit
+- [bugfix] Fix various crashes
+- [3p] Build with Tensorflow 2.11.0
+- [3p] Update JAX to 0.4.1
+
+## 20221116
+- [SPU] 0.3.0 release
 - [API] Add IR type for frontend compilation
 - [Feature] Support SignOp, Expm1Op, DotGeneralOp
+- [Feature] Improve convolution performance
+- [Feature] Link Send/Recv python binding
 - [bugfix] Relax iota type constraint
 - [bugfix] Fix type inference for whileOp/dynamicUpdateSliceOp
 - [bugfix] Relax clamp type constraint
-- [Feature] Improve convolution performance
+- [bugfix] Fix NotOp with non-pred integer types
 
 ## 20220905
 - [SPU] 0.2.4 release

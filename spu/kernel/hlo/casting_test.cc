@@ -12,24 +12,32 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#pragma once
+#include "spu/kernel/hlo/casting.h"
 
-#include "spu/kernel/hlo/utils.h"
+#include "gtest/gtest.h"
+
+#include "spu/core/ndarray_ref.h"
+#include "spu/kernel/context.h"
+#include "spu/kernel/hal/test_util.h"
+#include "spu/kernel/hlo/const.h"
+#include "spu/kernel/value.h"
 
 namespace spu::kernel::hlo {
 
-struct GatherConfig {
-  absl::Span<const int64_t> sliceSizes;
-  int64_t indexVectorDim;
-  absl::Span<const int64_t> offsetDims;
-  absl::Span<const int64_t> collapsedSliceDims;
-  absl::Span<const int64_t> startIndexMap;
-};
+TEST(ConstTest, Empty) {
+  HalContext hctx = hal::test::makeRefHalContext();
 
-// This is ported from
-// https://github.com/tensorflow/tensorflow/blob/bf4c6ad46dac1f7f69911e2bfc48e141a39b40af/tensorflow/compiler/xla/service/hlo_evaluator.cc#L1774
-spu::Value Gather(HalContext *ctx, const spu::Value &operand,
-                  const spu::Value &start_indicies, const GatherConfig &config,
-                  absl::Span<const int64_t> result_shape);
+  auto empty_c = Constant(&hctx, true, {0});
+
+  // Seal
+  auto s_empty = Seal(&hctx, empty_c);
+
+  // Reveal
+  auto p_empty = Reveal(&hctx, s_empty);
+
+  EXPECT_EQ(p_empty.numel(), 0);
+  EXPECT_EQ(p_empty.shape().size(), 1);
+  EXPECT_EQ(p_empty.shape()[0], 0);
+}
 
 }  // namespace spu::kernel::hlo

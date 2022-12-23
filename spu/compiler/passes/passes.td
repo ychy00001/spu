@@ -63,3 +63,15 @@ def OptimizeMaxPooling: Pass<"optimize-maxpool", "func::FuncOp"> {
   let constructor = "createOptimizeMaxPoolingPass()";
   let dependentDialects = ["pphlo::PPHloDialect"];
 }
+
+def OptimizeSelect: Pass<"optimize-select", "func::FuncOp"> {
+  let summary = "Preconvert pred to ashare for better select perf";
+  let constructor = "createOptimizeSelectPass()";
+  let dependentDialects = ["pphlo::PPHloDialect"];
+}
+
+def OptimizeSqrtToRsqrt: Pass<"optimize-sqrt-to-rsqrt", "func::FuncOp"> {
+  let summary = "Rewrite 1/(sqrt(x)+small_const) into rsqrt(x+small_const)";
+  let constructor = "createOptimizeSqrtToRsqrtPass()";
+  let dependentDialects = ["pphlo::PPHloDialect"];
+}

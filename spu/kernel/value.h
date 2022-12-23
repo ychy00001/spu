@@ -33,8 +33,8 @@ class Value final {
   explicit Value(NdArrayRef data, DataType dtype);
 
   /// Forward ndarray methods.
-  int64_t numel() const { return data_.numel(); }
-  size_t elsize() const { return data_.elsize(); }
+  inline int64_t numel() const { return data_.numel(); }
+  inline size_t elsize() const { return data_.elsize(); }
   std::vector<int64_t> const& strides() const { return data_.strides(); }
   std::vector<int64_t> const& shape() const { return data_.shape(); }
 
@@ -64,6 +64,7 @@ class Value final {
 
   // Serialize to protobuf.
   ValueProto toProto() const;
+  ValueMeta toMetaProto() const;
 
   // Deserialize from protobuf.
   static Value fromProto(const ValueProto& proto);

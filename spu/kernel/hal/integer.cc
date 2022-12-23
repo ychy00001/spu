@@ -21,15 +21,14 @@ namespace spu::kernel::hal {
 
 // FIXME(jint) handle cross (int) dtype binary operators
 #define ENSURE_INT_AND_DTYPE_MATCH(X, Y)                        \
-  YASL_ENFORCE(X.isInt(), "expect lhs int, got {]", X.dtype()); \
-  YASL_ENFORCE(Y.isInt(), "expect rhs int, got {]", X.dtype());
+  YACL_ENFORCE(X.isInt(), "expect lhs int, got {]", X.dtype()); \
+  YACL_ENFORCE(Y.isInt(), "expect rhs int, got {]", X.dtype());
 
 #define DEF_UNARY_OP(Name, Fn2K)                              \
   Value Name(HalContext* ctx, const Value& x) {               \
-    SPU_TRACE_HAL(ctx, x);                                    \
-    SPU_PROFILE_OP(ctx, x);                                   \
+    SPU_TRACE_HAL_LEAF(ctx, x);                               \
                                                               \
-    YASL_ENFORCE(x.isInt(), "expect Int, got {]", x.dtype()); \
+    YACL_ENFORCE(x.isInt(), "expect Int, got {]", x.dtype()); \
     return Fn2K(ctx, x).setDtype(x.dtype());                  \
   }
 
@@ -40,8 +39,7 @@ DEF_UNARY_OP(i_negate, _negate)
 
 #define DEF_BINARY_OP(Name, Fn2K)                               \
   Value Name(HalContext* ctx, const Value& x, const Value& y) { \
-    SPU_TRACE_HAL(ctx, x, y);                                   \
-    SPU_PROFILE_OP(ctx, x, y);                                  \
+    SPU_TRACE_HAL_LEAF(ctx, x, y);                              \
     ENSURE_INT_AND_DTYPE_MATCH(x, y);                           \
     return Fn2K(ctx, x, y).setDtype(x.dtype());                 \
   }
@@ -51,8 +49,7 @@ DEF_BINARY_OP(i_mul, _mul)
 DEF_BINARY_OP(i_mmul, _mmul)
 
 Value i_less(HalContext* ctx, const Value& x, const Value& y) {
-  SPU_TRACE_HAL(ctx, x, y);
-  SPU_PROFILE_OP(ctx, x, y);
+  SPU_TRACE_HAL_LEAF(ctx, x, y);
   ENSURE_INT_AND_DTYPE_MATCH(x, y);
 
   return _less(ctx, x, y).setDtype(DT_I1);
@@ -61,31 +58,28 @@ Value i_less(HalContext* ctx, const Value& x, const Value& y) {
 #undef DEF_BINARY_OP
 
 Value i_abs(HalContext* ctx, const Value& x) {
-  SPU_TRACE_HAL(ctx, x);
-  SPU_PROFILE_OP(ctx, x);
+  SPU_TRACE_HAL_LEAF(ctx, x);
 
-  YASL_ENFORCE(x.isInt());
+  YACL_ENFORCE(x.isInt());
 
   // abs(x) = _sign(x) * x
   return _mul(ctx, _sign(ctx, x), x).setDtype(x.dtype());
 }
 
 Value i_equal(HalContext* ctx, const Value& x, const Value& y) {
-  SPU_TRACE_HAL(ctx, x, y);
-  SPU_PROFILE_OP(ctx, x, y);
+  SPU_TRACE_HAL_LEAF(ctx, x, y);
 
-  YASL_ENFORCE(x.isInt());
-  YASL_ENFORCE(y.isInt());
+  YACL_ENFORCE(x.isInt());
+  YACL_ENFORCE(y.isInt());
 
   return _eqz(ctx, i_sub(ctx, x, y)).setDtype(DT_I1);
 }
 
 Value i_sub(HalContext* ctx, const Value& x, const Value& y) {
-  SPU_TRACE_HAL(ctx, x, y);
-  SPU_PROFILE_OP(ctx, x, y);
+  SPU_TRACE_HAL_LEAF(ctx, x, y);
 
-  YASL_ENFORCE(x.isInt());
-  YASL_ENFORCE(y.isInt());
+  YACL_ENFORCE(x.isInt());
+  YACL_ENFORCE(y.isInt());
   return i_add(ctx, x, i_negate(ctx, y));
 }
 

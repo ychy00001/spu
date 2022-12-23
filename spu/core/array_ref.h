@@ -17,7 +17,7 @@
 #include <memory>
 #include <vector>
 
-#include "yasl/base/buffer.h"
+#include "yacl/base/buffer.h"
 
 #include "spu/core/type.h"
 #include "spu/core/vectorize.h"
@@ -32,7 +32,7 @@ void strided_copy(int64_t numel, int64_t elsize, void* dst, int64_t dstride,
 
 // ArrayRef is a reference type which represent an strided array of objects.
 class ArrayRef {
-  std::shared_ptr<yasl::Buffer> buf_{nullptr};
+  std::shared_ptr<yacl::Buffer> buf_{nullptr};
 
   // element type.
   Type eltype_{};
@@ -50,7 +50,7 @@ class ArrayRef {
   ArrayRef() = default;
 
   // full constructor
-  ArrayRef(std::shared_ptr<yasl::Buffer> buf, Type eltype, int64_t numel,
+  ArrayRef(std::shared_ptr<yacl::Buffer> buf, Type eltype, int64_t numel,
            int64_t stride, int64_t offset);
 
   // create a new buffer of uninitialized elements and ref to it.
@@ -59,7 +59,7 @@ class ArrayRef {
   // Return total number of elements.
   int64_t numel() const { return numel_; }
 
-  size_t elsize() const { return eltype_.size(); }
+  inline size_t elsize() const { return eltype_.size(); }
 
   int64_t stride() const { return stride_; }
 
@@ -72,12 +72,12 @@ class ArrayRef {
   // https://numpy.org/doc/stable/user/basics.indexing.html#slicing-and-striding
   ArrayRef slice(int64_t start, int64_t stop, int64_t stride = 1) const;
 
-  std::shared_ptr<yasl::Buffer> buf() const { return buf_; }
+  std::shared_ptr<yacl::Buffer> buf() const { return buf_; }
 
   // Create a new buffer if current underline buffer is not compact.
   // while compact means offset > 0 or stride != elsize.
   // Or return the underline buffer.
-  std::shared_ptr<yasl::Buffer> getOrCreateCompactBuf() const;
+  std::shared_ptr<yacl::Buffer> getOrCreateCompactBuf() const;
 
   bool isCompact() const;
 
@@ -92,10 +92,16 @@ class ArrayRef {
 
   // Get data pointer
   void* data() {
-    return reinterpret_cast<void*>(buf_->data<std::byte>() + offset_);
+    if (buf_) {
+      return reinterpret_cast<void*>(buf_->data<std::byte>() + offset_);
+    }
+    return nullptr;
   }
   void const* data() const {
-    return reinterpret_cast<void const*>(buf_->data<std::byte>() + offset_);
+    if (buf_) {
+      return reinterpret_cast<void const*>(buf_->data<std::byte>() + offset_);
+    }
+    return nullptr;
   }
 
   // Get element.
@@ -119,12 +125,12 @@ struct SimdTrait<ArrayRef> {
 
   template <typename InputIt>
   static ArrayRef pack(InputIt first, InputIt last, PackInfo& pi) {
-    YASL_ENFORCE(first != last);
+    YACL_ENFORCE(first != last);
 
     size_t total_numel = 0;
     const Type ty = first->eltype();
     for (auto itr = first; itr != last; ++itr) {
-      YASL_ENFORCE(itr->eltype() == ty, "type mismatch {} != {}", itr->eltype(),
+      YACL_ENFORCE(itr->eltype() == ty, "type mismatch {} != {}", itr->eltype(),
                    ty);
       total_numel += itr->numel();
     }
@@ -145,7 +151,7 @@ struct SimdTrait<ArrayRef> {
     const int64_t total_num =
         std::accumulate(pi.begin(), pi.end(), 0, std::plus<>());
 
-    YASL_ENFORCE(v.numel() == total_num, "split number mismatch {} != {}",
+    YACL_ENFORCE(v.numel() == total_num, "split number mismatch {} != {}",
                  v.numel(), total_num);
 
     int64_t offset = 0;
@@ -190,31 +196,6 @@ class ArrayView {
   T& operator[](size_t idx) { return *(data_ + idx * stride_); }
 
   T const& operator[](size_t idx) const { return *(data_ + idx * stride_); }
-};
-
-// A vector like container which buffer could be stealed.
-template <typename T>
-class Array {
-  T* const data_;
-  int64_t const numel_;
-
- public:
-  // TODO: we explicit discard const correctness due to the complexity.
-  explicit Array(yasl::Buffer&& buf)
-      : data_(buf.data()), numel_(buf.size() / sizeof(T)) {
-    YASL_ENFORCE(buf.size() % sizeof(T) == 0);
-    buf.release();
-  }
-
-  ~Array() { delete[] data_; }
-
-  int64_t numel() const { return numel_; }
-
-  T* data() { return data_; }
-
-  T& operator[](size_t idx) { return *(data_ + idx); }
-
-  T const& operator[](size_t idx) const { return *(data_ + idx); }
 };
 
 }  // namespace spu

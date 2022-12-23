@@ -16,7 +16,7 @@
 # > bazel run -c opt //examples/python/utils:nodectl -- up
 #
 # Run this example script.
-# > bazel run //examples/python/ml:stax_nn
+# > bazel run -c opt //examples/python/ml:stax_nn
 
 import json
 import time
@@ -27,7 +27,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 import tensorflow_datasets as tfds
-from jax.example_libraries import optimizers, stax
+from jax.example_libraries import stax
 from keras.datasets import cifar10
 from datetime import datetime
 
@@ -46,11 +46,21 @@ from examples.python.utils.stax_models import (
 
 from sklearn.metrics import accuracy_score
 
+
+import argparse
+
+parser = argparse.ArgumentParser(description='distributed driver.')
+parser.add_argument("--model", default='network_a', type=str)
+parser.add_argument("-c", "--config", default="examples/python/conf/3pc.json", type=str)
+parser.add_argument("-e", "--epoch", default=5, type=int)
+parser.add_argument("-b", "--batch_size", default=128, type=int)
+parser.add_argument("-o", "--optimizer", default="SGD", type=str)
+parser.add_argument('--run_cpu', default=False, action='store_true')
+args = parser.parse_args()
+
 # Follows https://arxiv.org/pdf/2107.00501.pdf Appendix C.
-DEFAULT_LEARNING_RATE = 0.01
-# Suggested to be 150.
-DEFAULT_EPOCHS = 5
-DEFAULT_BATCH_SIZE = 128
+DEFAULT_EPOCHS = args.epoch
+DEFAULT_BATCH_SIZE = args.batch_size
 
 
 def train(
@@ -58,7 +68,6 @@ def train(
     train_y,
     init_fun,
     predict_fun,
-    learning_rate,
     epochs,
     batch_size,
     run_on_spu,
@@ -69,7 +78,20 @@ def train(
         [-1 if idx == 0 else i for idx, i in enumerate(list(train_x.shape))]
     )
     _, params_init = init_fun(key, input_shape)
-    opt_init, opt_update, get_params = optimizers.momentum(learning_rate, 0.9)
+    if args.optimizer in ["SGD", "sgd"]:
+        from jax.example_libraries import optimizers
+
+        opt_init, opt_update, get_params = optimizers.momentum(0.01, 0.9)
+    elif args.optimizer in ["ADAM", "adam"]:
+        from jax.example_libraries import optimizers
+
+        opt_init, opt_update, get_params = optimizers.adam(0.001)
+    elif args.optimizer in ["AMSgrad", "amsgrad"]:
+        from examples.python.utils import optimizers
+
+        opt_init, opt_update, get_params = optimizers.amsgrad(0.001)
+    else:
+        raise RuntimeError(f"Unsupported optimizer type {args.optimizer}.")
     opt_state = opt_init(params_init)
 
     def update_model(state, imgs, labels, i):
@@ -92,12 +114,13 @@ def train(
 
     print('Start trainning...')
     for i in range(1, epochs + 1):
-        imgs_batchs = jnp.array_split(train_x, len(train_x) / batch_size, axis=0)
-        labels_batchs = jnp.array_split(train_y, len(train_y) / batch_size, axis=0)
-
-        for batch_idx, (batch_images, batch_labels) in enumerate(
-            zip(imgs_batchs, labels_batchs)
-        ):
+        for batch_idx in range(math.ceil(len(train_x) / batch_size)):
+            batch_images = train_x[
+                batch_idx * batch_size : (batch_idx + 1) * batch_size
+            ]
+            batch_labels = train_y[
+                batch_idx * batch_size : (batch_idx + 1) * batch_size
+            ]
             it = next(itercount)
             print(
                 f'{datetime.now().time()} Epoch: {i}/{epochs}  Batch: {batch_idx}/{math.floor(len(train_x) / batch_size)}'
@@ -141,7 +164,6 @@ def train_secureml(run_on_spu: bool = False):
     train_y = jax.nn.one_hot(train_y, 10)
 
     # Hyper-parameters
-    learning_rate = DEFAULT_LEARNING_RATE
     epochs = DEFAULT_EPOCHS
     batch_size = DEFAULT_BATCH_SIZE
 
@@ -153,7 +175,6 @@ def train_secureml(run_on_spu: bool = False):
         train_y,
         init_fun,
         predict_fun,
-        learning_rate,
         epochs,
         batch_size,
         run_on_spu,
@@ -173,7 +194,6 @@ def train_minionn(run_on_spu: bool = False):
     train_y = jax.nn.one_hot(train_y, 10)
 
     # Hyper-parameters
-    learning_rate = DEFAULT_LEARNING_RATE
     epochs = DEFAULT_EPOCHS
     batch_size = DEFAULT_BATCH_SIZE
 
@@ -185,7 +205,6 @@ def train_minionn(run_on_spu: bool = False):
         train_y,
         init_fun,
         predict_fun,
-        learning_rate,
         epochs,
         batch_size,
         run_on_spu,
@@ -205,7 +224,6 @@ def train_lenet(run_on_spu: bool = False):
     train_y = jax.nn.one_hot(train_y, 10)
 
     # Hyper-parameters
-    learning_rate = DEFAULT_LEARNING_RATE
     epochs = DEFAULT_EPOCHS
     batch_size = DEFAULT_BATCH_SIZE
 
@@ -217,7 +235,6 @@ def train_lenet(run_on_spu: bool = False):
         train_y,
         init_fun,
         predict_fun,
-        learning_rate,
         epochs,
         batch_size,
         run_on_spu,
@@ -237,7 +254,6 @@ def train_chamelon(run_on_spu: bool = False):
     train_y = jax.nn.one_hot(train_y, 10)
 
     # Hyper-parameters
-    learning_rate = DEFAULT_LEARNING_RATE
     epochs = DEFAULT_EPOCHS
     batch_size = DEFAULT_BATCH_SIZE
 
@@ -249,7 +265,6 @@ def train_chamelon(run_on_spu: bool = False):
         train_y,
         init_fun,
         predict_fun,
-        learning_rate,
         epochs,
         batch_size,
         run_on_spu,
@@ -266,12 +281,6 @@ def train_chamelon(run_on_spu: bool = False):
 """
 NN functionality test
 """
-import argparse
-
-parser = argparse.ArgumentParser(description='distributed driver.')
-parser.add_argument("--model", default='network_a')
-parser.add_argument("-c", "--config", default="examples/python/conf/3pc.json")
-args = parser.parse_args()
 
 print(f'The selected NN model is {args.model}.')
 
@@ -285,8 +294,10 @@ elif args.model == 'network_d':
     fn = train_chamelon
 else:
     raise RuntimeError("unsupported model.")
-print('Run on CPU\n------\n')
-fn(run_on_spu=False)
+
+if args.run_cpu:
+    print('Run on CPU\n------\n')
+    fn(run_on_spu=False)
 
 print('Run on SPU\n------\n')
 with open(args.config, 'r') as file:

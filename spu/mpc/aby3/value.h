@@ -15,6 +15,7 @@
 #pragma once
 
 #include "spu/core/array_ref.h"
+#include "spu/core/parallel_utils.h"
 #include "spu/core/type_util.h"
 
 namespace spu::mpc::aby3 {
@@ -46,34 +47,37 @@ ArrayRef getSecondShare(const ArrayRef& in);
 ArrayRef makeAShare(const ArrayRef& s1, const ArrayRef& s2, FieldType field,
                     int owner_rank = -1);
 
-// TODO: drop me
-ArrayRef makeBShare(const ArrayRef& s1, const ArrayRef& s2, size_t nbits);
-
 PtType calcBShareBacktype(size_t nbits);
 
 template <typename T>
 size_t maxBitWidth(ArrayView<T> av) {
-  size_t res = 0;
   if constexpr (sizeof(T) == 16) {
     // TODO: absl::bit_width can not handle int128
     return 128;
   } else {
-    for (auto idx = 0; idx < av.numel(); idx++) {
-      res = std::max(res, static_cast<size_t>(absl::bit_width(av[idx])));
+    const int64_t kNumBits = sizeof(T) * 8 + 1;
+    std::vector<uint8_t> mask(kNumBits, 0);
+    // FIXME: fix multi-threading write race.
+    pforeach(0, av.numel(),
+             [&](int64_t idx) { mask[absl::bit_width(av[idx])] = 1; });
+    for (int64_t bit = kNumBits - 1; bit >= 0; bit--) {
+      if (mask[bit] == 1) {
+        return bit;
+      }
     }
+    return 0;
   }
-  return res;
 }
 
 ArrayRef getShare(const ArrayRef& in, int64_t share_idx);
 
 template <typename T>
 std::vector<T> getShareAs(const ArrayRef& in, size_t share_idx) {
-  YASL_ENFORCE(in.stride() != 0);
-  YASL_ENFORCE(share_idx == 0 || share_idx == 1);
+  YACL_ENFORCE(in.stride() != 0);
+  YACL_ENFORCE(share_idx == 0 || share_idx == 1);
 
   ArrayRef share = getShare(in, share_idx);
-  YASL_ENFORCE(share.elsize() == sizeof(T));
+  YACL_ENFORCE(share.elsize() == sizeof(T));
 
   std::vector<T> res(in.numel());
   DISPATCH_UINT_PT_TYPES(share.eltype().as<PtTy>()->pt_type(), "_", [&]() {

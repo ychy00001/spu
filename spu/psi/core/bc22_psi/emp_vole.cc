@@ -15,12 +15,12 @@
 #include "spu/psi/core/bc22_psi/emp_vole.h"
 
 #include "spdlog/spdlog.h"
-#include "yasl/utils/rand.h"
+#include "yacl/crypto/utils/rand.h"
 
 namespace spu::psi {
 
 WolverineVole::WolverineVole(
-    PsiRoleType psi_role, const std::shared_ptr<yasl::link::Context>& link_ctx)
+    PsiRoleType psi_role, const std::shared_ptr<yacl::link::Context>& link_ctx)
     : party_((psi_role == PsiRoleType::Sender) ? emp::ALICE : emp::BOB),
       link_ctx_(link_ctx) {
   // set CheetahIo
@@ -41,8 +41,9 @@ WolverineVole::WolverineVole(
 
 void WolverineVole::Setup() {
   if (party_ == emp::ALICE) {
-    delta_ = yasl::RandSeed();
-    delta_ = delta_ & ((WolverineVoleFieldType)0xFFFFFFFFFFFFFFFFLL);
+    delta_ = yacl::crypto::RandSeed();
+    delta_ =
+        delta_ & (static_cast<WolverineVoleFieldType>(0xFFFFFFFFFFFFFFFFLL));
     delta_ = mod(delta_, pr);
     emp_zk_vole_->setup(delta_);
   } else {
@@ -60,13 +61,13 @@ std::vector<WolverineVoleFieldType> WolverineVole::Extend(size_t vole_num) {
 
 std::vector<WolverineVoleFieldType> GetPolynoimalCoefficients(
     const std::vector<std::string>& bin_data) {
-  YASL_ENFORCE(bin_data.size() <= 3);
+  YACL_ENFORCE(bin_data.size() <= 3);
 
   std::vector<WolverineVoleFieldType> block_coeffs(bin_data.size());
 
   std::vector<WolverineVoleFieldType> t(bin_data.size());
   for (size_t i = 0; i < bin_data.size(); ++i) {
-    YASL_ENFORCE(bin_data[0].length() <= sizeof(WolverineVoleFieldType),
+    YACL_ENFORCE(bin_data[0].length() <= sizeof(WolverineVoleFieldType),
                  "{}>{}", bin_data[0].length(), sizeof(WolverineVoleFieldType));
     t[i] = 0;
     std::memcpy(&t[i], bin_data[i].data(), bin_data[i].length());
@@ -132,7 +133,7 @@ WolverineVoleFieldType EvaluatePolynoimal(
     WolverineVoleFieldType high_coeff) {
   WolverineVoleFieldType block_x = 0;
 
-  YASL_ENFORCE(x.length() <= sizeof(WolverineVoleFieldType));
+  YACL_ENFORCE(x.length() <= sizeof(WolverineVoleFieldType));
   std::memcpy(&block_x, x.data(), x.length());
 
   return EvaluatePolynoimal(coeffs, block_x, high_coeff);

@@ -12,7 +12,7 @@
 # See the License for the specific language governing permissions and
 # limitations under the License.
 
-load("//bazel:spu.bzl", "spu_cc_binary", "spu_cc_library", "spu_cc_test")
+load("//bazel:spu.bzl", "spu_cc_library", "spu_cc_test")
 
 package(default_visibility = ["//visibility:public"])
 
@@ -27,8 +27,8 @@ spu_cc_library(
         ":control_flow",
         ":convolution",
         ":dynamic_slice",
-        ":gather",
         ":geometrical",
+        ":indexing",
         ":rand",
         ":reduce",
         ":select_and_scatter",
@@ -47,6 +47,15 @@ spu_cc_library(
     ],
 )
 
+spu_cc_test(
+    name = "basic_binary_test",
+    srcs = ["basic_binary_test.cc"],
+    deps = [
+        ":basic_binary",
+        ":const",
+    ],
+)
+
 spu_cc_library(
     name = "basic_ternary",
     srcs = ["basic_ternary.cc"],
@@ -54,6 +63,15 @@ spu_cc_library(
     deps = [
         ":utils",
         "//spu/kernel/hal",
+    ],
+)
+
+spu_cc_test(
+    name = "basic_ternary_test",
+    srcs = ["basic_ternary_test.cc"],
+    deps = [
+        ":basic_ternary",
+        ":const",
     ],
 )
 
@@ -67,6 +85,15 @@ spu_cc_library(
     ],
 )
 
+spu_cc_test(
+    name = "basic_unary_test",
+    srcs = ["basic_unary_test.cc"],
+    deps = [
+        ":basic_unary",
+        ":const",
+    ],
+)
+
 spu_cc_library(
     name = "casting",
     srcs = ["casting.cc"],
@@ -74,6 +101,15 @@ spu_cc_library(
     deps = [
         ":utils",
         "//spu/kernel/hal",
+    ],
+)
+
+spu_cc_test(
+    name = "casting_test",
+    srcs = ["casting_test.cc"],
+    deps = [
+        ":casting",
+        ":const",
     ],
 )
 
@@ -88,9 +124,17 @@ spu_cc_library(
     ],
 )
 
+spu_cc_test(
+    name = "const_test",
+    srcs = ["const_test.cc"],
+    deps = [
+        ":const",
+    ],
+)
+
 spu_cc_library(
     name = "control_flow",
-    # srcs = ["control_flow.cc"],
+    srcs = ["control_flow.cc"],
     hdrs = ["control_flow.h"],
     deps = [
         ":utils",
@@ -118,13 +162,30 @@ spu_cc_library(
     ],
 )
 
+spu_cc_test(
+    name = "dynamic_slice_test",
+    srcs = ["dynamic_slice_test.cc"],
+    deps = [
+        ":const",
+        ":dynamic_slice",
+    ],
+)
+
 spu_cc_library(
-    name = "gather",
-    srcs = ["gather.cc"],
-    hdrs = ["gather.h"],
+    name = "indexing",
+    srcs = ["indexing.cc"],
+    hdrs = ["indexing.h"],
     deps = [
         ":utils",
         "//spu/kernel/hal",
+    ],
+)
+
+spu_cc_test(
+    name = "indexing_test",
+    srcs = ["indexing_test.cc"],
+    deps = [
+        ":indexing",
     ],
 )
 
@@ -135,6 +196,15 @@ spu_cc_library(
     deps = [
         ":utils",
         "//spu/kernel/hal",
+    ],
+)
+
+spu_cc_test(
+    name = "geometrical_test",
+    srcs = ["geometrical_test.cc"],
+    deps = [
+        ":const",
+        ":geometrical",
     ],
 )
 
@@ -183,11 +253,22 @@ spu_cc_library(
 
 spu_cc_library(
     name = "sort",
-    # srcs = ["sort.cc"],
+    srcs = ["sort.cc"],
     hdrs = ["sort.h"],
     deps = [
+        ":casting",
         ":utils",
         "//spu/kernel/hal",
+    ],
+)
+
+spu_cc_test(
+    name = "sort_test",
+    srcs = ["sort_test.cc"],
+    deps = [
+        ":sort",
+        "//spu/kernel/hal:polymorphic",
+        "//spu/kernel/hal:test_util",
     ],
 )
 
@@ -197,5 +278,23 @@ spu_cc_library(
     hdrs = ["utils.h"],
     deps = [
         "//spu/kernel/hal",
+    ],
+)
+
+spu_cc_library(
+    name = "shuffle",
+    srcs = ["shuffle.cc"],
+    hdrs = ["shuffle.h"],
+    deps = [
+        ":sort",
+        "//spu/kernel/hal",
+    ],
+)
+
+spu_cc_test(
+    name = "shuffle_test",
+    srcs = ["shuffle_test.cc"],
+    deps = [
+        ":shuffle",
     ],
 )

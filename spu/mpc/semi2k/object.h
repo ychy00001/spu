@@ -14,6 +14,8 @@
 
 #pragma once
 
+#include <memory>
+
 #include "spu/mpc/beaver/beaver_tfp.h"
 #include "spu/mpc/util/communicator.h"
 
@@ -26,11 +28,16 @@ class Semi2kState : public State {
  public:
   static constexpr char kBindName[] = "Semi2kState";
 
-  explicit Semi2kState(std::shared_ptr<yasl::link::Context> lctx) {
+  explicit Semi2kState(std::shared_ptr<yacl::link::Context> lctx) {
     beaver_ = std::make_unique<BeaverTfpUnsafe>(lctx);
   }
 
   Beaver* beaver() { return beaver_.get(); }
+
+  std::unique_ptr<State> fork() override {
+    return std::make_unique<Semi2kState>(
+        dynamic_cast<BeaverTfpUnsafe*>(beaver())->GetLink()->Spawn());
+  }
 };
 
 }  // namespace spu::mpc

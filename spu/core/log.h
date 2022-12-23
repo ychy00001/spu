@@ -1,4 +1,4 @@
-// Copyright 2022 Ant Group Co., Ltd.
+// Copyright 2021 Ant Group Co., Ltd.
 //
 // Licensed under the Apache License, Version 2.0 (the "License");
 // you may not use this file except in compliance with the License.
@@ -14,16 +14,29 @@
 
 #pragma once
 
-#include <any>
-#include <memory>
+#include <string>
 
-#include "spu/psi/operator/bc22_2party_psi.h"
-#include "spu/psi/operator/ecdh_3party_psi.h"
-#include "spu/psi/operator/kkrt_2party_psi.h"
-#include "spu/psi/operator/nparty_psi.h"
+#include "spdlog/spdlog.h"
 
-namespace spu::psi {
+namespace spu::logging {
 
-std::shared_ptr<PsiBaseOperator> CreatePsiOperator(const std::any& opts);
+enum class LogLevel {
+  debug = 0,
+  info = 1,
+  warn = 2,
+  error = 3,
+};
 
-}  // namespace spu::psi
+struct LogOptions {
+  bool enable_console_logger = true;
+  std::string system_log_path = "spu.log";
+
+  LogLevel log_level = LogLevel::info;
+
+  size_t max_log_file_size = 500 * 1024 * 1024;
+  size_t max_log_file_count = 10;
+};
+
+void SetupLogging(const LogOptions& options = {});
+
+}  // namespace spu::logging

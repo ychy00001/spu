@@ -19,7 +19,7 @@
 #include "mlir/Pass/Pass.h"
 #include "mlir/Pass/PassManager.h"
 #include "mlir/Transforms/Passes.h"
-#include "yasl/base/exception.h"
+#include "yacl/base/exception.h"
 
 #include "spu/compiler/common/compilation_context.h"
 #include "spu/compiler/passes/passes.h"
@@ -37,7 +37,7 @@ void Core::doit(mlir::ModuleOp module) {
   auto ret = pm.run(module);
 
   if (ret.failed()) {
-    YASL_THROW("Run core pipeline failed");
+    YACL_THROW("Run core pipeline failed");
   }
 }
 
@@ -47,10 +47,17 @@ void Core::buildPipeline(mlir::PassManager *pm) {
   optPM.addPass(mlir::pphlo::createOptimizeMaxPoolingPass());
   optPM.addPass(mlir::pphlo::createDecomposeComparisonPass());
   optPM.addPass(mlir::pphlo::createDecomposeMinMaxPass());
+  optPM.addPass(mlir::pphlo::createOptimizeSqrtToRsqrtPass());
+
+  optPM.addPass(mlir::createCSEPass());
+
   optPM.addPass(mlir::pphlo::createReduceTruncationPass());
   optPM.addPass(mlir::pphlo::createLowerMixedTypeOpPass());
 
   optPM.addPass(mlir::createCanonicalizerPass());
+
+  optPM.addPass(mlir::pphlo::createOptimizeSelectPass());
+
   optPM.addPass(mlir::createCSEPass());
 }
 

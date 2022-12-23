@@ -19,7 +19,7 @@
 #include <string>
 #include <unordered_map>
 
-#include "yasl/base/exception.h"
+#include "yacl/base/exception.h"
 
 #include "spu/core/type_util.h"
 
@@ -150,6 +150,8 @@ class TypeObject {
   static std::string_view getStaticId();
 
   // Return type size in bytes.
+  //
+  // Warn: change attributes of a type object should NOT affect the object size.
   virtual size_t size() const = 0;
 
   // Return the string representation of this concept.
@@ -173,13 +175,17 @@ class TypeObject {
 class Type final {
   std::unique_ptr<TypeObject> model_;
 
+  // cache dynamic object size for better performance.
+  size_t cached_model_size_ = -1;
+
  public:
   // default constructable, as the void type.
   Type();
   explicit Type(std::unique_ptr<TypeObject> model);
 
   // copy and move constructable
-  Type(const Type& other) : model_(other.model_->clone()) {}
+  Type(const Type& other)
+      : model_(other.model_->clone()), cached_model_size_(model_->size()) {}
   Type& operator=(const Type& other);
   Type(Type&& other) = default;
   Type& operator=(Type&& other) = default;
@@ -193,21 +199,23 @@ class Type final {
   static Type fromString(std::string_view repr);
 
   // return object of this type's size in bytes.
-  size_t size() const { return model_->size(); }
+  inline size_t size() const { return cached_model_size_; }
 
   // object oriented relationship
   template <typename T>
   T const* as() const;
+
   template <typename T>
   T* as();
+
   template <typename T>
   bool isa() const;
 };
 
 template <typename T>
 T const* Type::as() const {
-  T const* concrete_type = dynamic_cast<T*>(model_.get());
-  YASL_ENFORCE(concrete_type, "casting from {} to {} failed", model_->getId(),
+  T const* concrete_type = dynamic_cast<T const*>(model_.get());
+  YACL_ENFORCE(concrete_type, "casting from {} to {} failed", model_->getId(),
                typeid(T).name());
   return concrete_type;
 }
@@ -215,14 +223,14 @@ T const* Type::as() const {
 template <typename T>
 T* Type::as() {
   T* concrete_type = dynamic_cast<T*>(model_.get());
-  YASL_ENFORCE(concrete_type, "casting from {} to {} failed", model_->getId(),
+  YACL_ENFORCE(concrete_type, "casting from {} to {} failed", model_->getId(),
                typeid(T).name());
   return concrete_type;
 }
 
 template <typename T>
 bool Type::isa() const {
-  T const* concrete_type = dynamic_cast<T*>(model_.get());
+  T const* concrete_type = dynamic_cast<T const*>(model_.get());
   return concrete_type != nullptr;
 }
 
@@ -230,7 +238,7 @@ std::ostream& operator<<(std::ostream& os, const Type& type);
 
 template <typename ModelT, typename... Args>
 Type makeType(Args&&... args) {
-  return Type{std::make_unique<ModelT>(std::forward<Args>(args)...)};
+  return Type(std::make_unique<ModelT>(std::forward<Args>(args)...));
 }
 
 template <typename DerivedT, typename BaseT, typename... InterfaceT>
@@ -255,7 +263,7 @@ class VoidTy : public TypeImpl<VoidTy, TypeObject> {
   size_t size() const override { return 0u; }
 
   void fromString(std::string_view detail) override {
-    YASL_ENFORCE(detail.empty(), "expect empty, got={}", detail);
+    YACL_ENFORCE(detail.empty(), "expect empty, got={}", detail);
   };
 
   std::string toString() const override { return ""; }
@@ -277,7 +285,7 @@ class PtTy : public TypeImpl<PtTy, TypeObject> {
 
   bool equals(TypeObject const* other) const override {
     auto const* derived_other = dynamic_cast<PtTy const*>(other);
-    YASL_ENFORCE(derived_other);
+    YACL_ENFORCE(derived_other);
     return pt_type() == derived_other->pt_type();
   }
 
@@ -286,7 +294,7 @@ class PtTy : public TypeImpl<PtTy, TypeObject> {
   std::string toString() const override { return PtType_Name(pt_type_); }
 
   void fromString(std::string_view detail) override {
-    YASL_ENFORCE(PtType_Parse(std::string(detail), &pt_type_),
+    YACL_ENFORCE(PtType_Parse(std::string(detail), &pt_type_),
                  "parse failed from={}", detail);
   }
 };
@@ -325,10 +333,15 @@ class RingTy : public TypeImpl<RingTy, TypeObject, Ring2k> {
 
   static std::string_view getStaticId() { return "Ring"; }
 
-  size_t size() const override { return SizeOf(GetStorageType(field_)); }
+  size_t size() const override {
+    if (field_ == FT_INVALID) {
+      return 0;
+    }
+    return SizeOf(GetStorageType(field_));
+  }
 
   void fromString(std::string_view detail) override {
-    YASL_ENFORCE(FieldType_Parse(std::string(detail), &field_),
+    YACL_ENFORCE(FieldType_Parse(std::string(detail), &field_),
                  "parse failed from={}", detail);
   };
 
@@ -336,7 +349,7 @@ class RingTy : public TypeImpl<RingTy, TypeObject, Ring2k> {
 
   bool equals(TypeObject const* other) const override {
     auto const* derived_other = dynamic_cast<RingTy const*>(other);
-    YASL_ENFORCE(derived_other);
+    YACL_ENFORCE(derived_other);
     return field() == derived_other->field();
   }
 };
@@ -373,7 +386,7 @@ class TypeContext {
 
   TypeCreateFn getTypeCreateFunction(std::string_view keyword) {
     auto fctor = creators.find(keyword);
-    YASL_ENFORCE(fctor != creators.end(), "type not found, {}", keyword);
+    YACL_ENFORCE(fctor != creators.end(), "type not found, {}", keyword);
     return fctor->second;
   }
 

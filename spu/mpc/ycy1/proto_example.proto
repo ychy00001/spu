@@ -1,0 +1,13 @@
+syntax = "proto2";
+
+package example;
+
+message Person {
+  optional string name =1;
+  optional int32 id = 2;   
+}
+
+enum SexEnum {
+  MAN = 1;
+  WOMAN = 2;
+}

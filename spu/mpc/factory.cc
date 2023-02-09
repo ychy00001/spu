@@ -20,6 +20,8 @@
 
 #include "spu/mpc/aby3/io.h"
 #include "spu/mpc/aby3/protocol.h"
+#include "spu/mpc/ycy1/io.h"
+#include "spu/mpc/ycy1/protocol.h"
 #include "spu/mpc/cheetah/io.h"
 #include "spu/mpc/cheetah/protocol.h"
 #include "spu/mpc/ref2k/ref2k.h"
@@ -40,6 +42,9 @@ std::unique_ptr<Object> Factory::CreateCompute(
     }
     case ProtocolKind::ABY3: {
       return makeAby3Protocol(conf, lctx);
+    }
+    case ProtocolKind::YCY1: {
+      return makeYcy1Protocol(conf, lctx);
     }
     case ProtocolKind::CHEETAH: {
       return makeCheetahProtocol(conf, lctx);
@@ -62,6 +67,9 @@ std::unique_ptr<IoInterface> Factory::CreateIO(const RuntimeConfig& conf,
     }
     case ProtocolKind::ABY3: {
       return aby3::makeAby3Io(conf.field(), npc);
+    }
+    case ProtocolKind::YCY1: {
+      return ycy1::makeYcy1Io(conf.field(), npc);
     }
     case ProtocolKind::CHEETAH: {
       return cheetah::makeCheetahIo(conf.field(), npc);

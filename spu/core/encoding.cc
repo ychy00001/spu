@@ -102,7 +102,10 @@ ArrayRef encodeToRing(const ArrayRef& src, FieldType field, size_t fxp_bits,
   } else {
     // handle integer & boolean
     DISPATCH_INT_PT_TYPES(pt_type, "_", [&]() {
+      // 定义   using ScalarT = EnumToPtType<PT_TYPE>::type;
       DISPATCH_ALL_FIELDS(field, "_", [&]() {
+        // field读取的是配置文件中配的类型
+        // 定义  using ring2k_t [[maybe_unused]] = Ring2kTrait<_kField>::scalar_t;
         using Integer = ScalarT;
         YACL_ENFORCE(sizeof(ring2k_t) >= sizeof(Integer),
                      "integer encoding failed, ring={} could not represent {}",

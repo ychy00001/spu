@@ -36,6 +36,7 @@ namespace {
 using UnaryOp = Value(HalContext*, const Value&);
 using BinaryOp = Value(HalContext*, const Value&, const Value&);
 
+// dtypeBinaryDispatch<f_add, i_add>("add", ctx, x, y);
 template <BinaryOp* FnFxp, BinaryOp* FnInt>
 Value dtypeBinaryDispatch(std::string_view op_name, HalContext* ctx,
                           const Value& x, const Value& y) {

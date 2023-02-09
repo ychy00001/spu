@@ -403,6 +403,7 @@ class ABProtAddSS : public BinaryKernel {
     if (_LAZY_AB) {
       return _AddAA(_2A(lhs), _2A(rhs));
     }
+    // #define _AddAA(lhs, rhs) ctx->caller()->call("add_aa", lhs, rhs)
     return _AddAA(lhs, rhs);
   }
 };

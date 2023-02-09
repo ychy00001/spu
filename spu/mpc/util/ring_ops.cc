@@ -240,6 +240,7 @@ void ring_assign(ArrayRef& x, const ArrayRef& y) {
 
   const auto field = x.eltype().as<Ring2k>()->field();
   return DISPATCH_ALL_FIELDS(field, kModule, [&]() {
+    // void assign(int64_t numel, const T* A, int64_t stride_A, T* C, int64_t stride_C)
     linalg::assign(numel, &y.at<ring2k_t>(0), y.stride(), &x.at<ring2k_t>(0),
                    x.stride());
   });

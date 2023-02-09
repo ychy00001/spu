@@ -1,0 +1,156 @@
+# Copyright 2021 Ant Group Co., Ltd.
+#
+# Licensed under the Apache License, Version 2.0 (the "License");
+# you may not use this file except in compliance with the License.
+# You may obtain a copy of the License at
+#
+#   http://www.apache.org/licenses/LICENSE-2.0
+#
+# Unless required by applicable law or agreed to in writing, software
+# distributed under the License is distributed on an "AS IS" BASIS,
+# WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+# See the License for the specific language governing permissions and
+# limitations under the License.
+
+load("//bazel:spu.bzl", "spu_cc_binary", "spu_cc_library", "spu_cc_test")
+load("@rules_proto//proto:defs.bzl", "proto_library")
+load("@rules_cc//cc:defs.bzl", "cc_proto_library")
+
+package(default_visibility = ["//visibility:public"])
+
+spu_cc_library(
+    name = "proto_example.pb",
+    srcs = ["proto_example.pb.cc"],
+    hdrs = ["proto_example.pb.h"],
+    deps = [
+    ],
+)
+
+proto_library(
+    name = "proto_example",
+    srcs = ["proto_example.proto"],
+)
+
+cc_proto_library(
+    name = "proto_example_cc",
+    deps = [":proto_example"],
+)
+
+spu_cc_library(
+    name = "ycy1",
+    deps = [
+        ":io",
+        ":protocol",
+    ],
+)
+
+spu_cc_library(
+    name = "protocol",
+    srcs = ["protocol.cc"],
+    hdrs = ["protocol.h"],
+    deps = [
+        ":arithmetic",
+        ":value",
+    ],
+)
+
+spu_cc_test(
+    name = "protocol_test",
+    srcs = ["protocol_test.cc"],
+    deps = [
+        ":protocol",
+        "//spu/mpc:api",
+        "//spu/mpc:object",
+        "//spu/mpc/common:pub2k",
+        "//spu/mpc/util:communicator",
+        "//spu/mpc/util:simulate",
+        "@com_google_googletest//:gtest",
+    ],
+)
+
+spu_cc_library(
+    name = "io",
+    srcs = ["io.cc"],
+    hdrs = ["io.h"],
+    deps = [
+        "//spu/mpc:io_interface",
+        "//spu/mpc/ycy1:type",
+        "//spu/mpc/ycy1:value",
+    ],
+)
+
+spu_cc_test(
+    name = "io_test",
+    srcs = ["io_test.cc"],
+    deps = [
+        ":io",
+        "//spu/mpc/util:ring_ops",
+        "//spu/mpc/util:simulate",
+        "@com_google_googletest//:gtest",
+    ],
+)
+
+spu_cc_library(
+    name = "arithmetic",
+    srcs = ["arithmetic.cc"],
+    hdrs = ["arithmetic.h"],
+    deps = [
+        ":type",
+        ":value",
+        "//spu/mpc/common:abprotocol",
+        "//spu/mpc/util:communicator",
+    ],
+)
+
+spu_cc_library(
+    name = "type",
+    srcs = ["type.cc"],
+    hdrs = ["type.h"],
+    deps = [
+        "//spu/core:type",
+        "//spu/mpc/common:pub2k",
+    ],
+)
+
+spu_cc_library(
+    name = "value",
+    srcs = ["value.cc"],
+    hdrs = ["value.h"],
+    deps = [
+        ":type",
+        "//spu/core",
+        "//spu/mpc/util:ring_ops",
+    ],
+)
+
+spu_cc_test(
+    name = "example_test",
+    srcs = ["example_test.cc"],
+    deps = [
+    ],
+)
+
+spu_cc_binary(
+    name = "example_main",
+    srcs = ["example_main.cc"],
+    deps = [
+        ":io",
+        "@com_github_xtensor_xtensor//:xtensor",
+    ],
+)
+
+spu_cc_test(
+    name = "array_test",
+    srcs = ["array_test.cc"],
+    deps = [
+        "//spu/core:array_ref",
+    ],
+)
+
+spu_cc_test(
+    name = "proto_test",
+    srcs = ["proto_test.cpp"],
+    deps = [
+        ":proto_example_cc",
+    ],
+)

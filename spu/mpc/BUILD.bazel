@@ -49,6 +49,7 @@ spu_cc_library(
         "//spu/mpc/cheetah",
         "//spu/mpc/ref2k",
         "//spu/mpc/semi2k",
+        "//spu/mpc/ycy1",
     ],
 )
 

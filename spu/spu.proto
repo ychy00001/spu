@@ -112,6 +112,9 @@ enum ProtocolKind {
   // The famous [Cheetah](https://eprint.iacr.org/2022/207) protocol, a very
   // fast 2PC protocol.
   CHEETAH = 4;
+
+  // 示例
+  YCY1 = 5;
 }
 
 // The spu Value proto, used for spu value serialization.
